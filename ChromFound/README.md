@@ -56,7 +56,7 @@ Then follow the command in Generate Cell Embeddings (below) by setting:
 ### Generate Cell Embeddings
 ```bash
 python -m src/cell_embedding \
-    --data_path sample_data/PBMC169K/atac_pbmc_benchmark_VIB_10xv1_1_qc_deepen_norm_log.h5ad \
+    --data_path sample_data/PBMC169K/atac_pbmc_benchmark_VIB_10xv1_1.h5ad \
     --output_path sample_data/PBMC169K/cell_embedding \
     --pretrain_checkpoint_path src/checkpoints \
     --pretrain_model_file model.pt \
