@@ -1,0 +1,7 @@
+**/__pycache__
+
+ChromFound/src/checkpoints/*.yaml
+ChromFound/src/checkpoints/*.pt
+
+ChromFound/sample_data/PBMC169K/*.h5ad
+!ChromFound/sample_data/PBMC169K/.gitkeep

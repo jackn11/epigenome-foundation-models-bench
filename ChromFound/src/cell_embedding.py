@@ -20,6 +20,11 @@ def load_data(file_path):
     if file_path.endswith('.h5ad'):
         logging.info(f"Reading h5ad file from {file_path}")
         adata = sc.read_h5ad(file_path)
+        # Convert hg38_Start and hg38_End to int if they are not numeric
+        if 'hg38_Start' in adata.var.columns:
+            adata.var['hg38_Start'] = adata.var['hg38_Start'].astype(int)
+        if 'hg38_End' in adata.var.columns:
+            adata.var['hg38_End'] = adata.var['hg38_End'].astype(int)
         return adata
     else:
         raise ValueError("Unsupported file format. Please provide a .h5ad file.")
