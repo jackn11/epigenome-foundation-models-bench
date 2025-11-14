@@ -73,6 +73,8 @@ def main():
     parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--cell_type_col', required=True, help='column name of cell type')
     parser.add_argument('--output_path', type=str, required=True, help='Path to save the updated h5ad file')
+    parser.add_argument('--num_splits', type=int, default=1, help='Number of data splits for parallel processing')
+    parser.add_argument('--split_idx', type=int, default=0, help='Index of current split (0 to num_splits-1)')
     args = parser.parse_args()
 
     device = torch.device(f"cuda:{args.local_rank}" if torch.cuda.is_available() else "cpu")
@@ -87,6 +89,16 @@ def main():
     chromosome_vocab = ModelUtils.get_chromosome_vocab(os.path.join(pretrain_path, "chromosome_vocab.yaml"))
     pretrain_data_args["chromosome_vocab"] = chromosome_vocab
     adata = load_data(args.data_path)
+    
+    # When running on low mem gpu split data
+    if args.num_splits > 1:
+        n_cells = adata.shape[0]
+        split_size = n_cells // args.num_splits
+        start_idx = args.split_idx * split_size
+        end_idx = start_idx + split_size if args.split_idx < args.num_splits - 1 else n_cells
+        adata = adata[start_idx:end_idx, :]
+        logging.info(f"Processing split {args.split_idx + 1}/{args.num_splits}: cells {start_idx} to {end_idx}")
+    
     max_length = adata.shape[1]
     cell_type = list(set(adata.obs['celltype'].unique().tolist()))
     cell_type_map = {cell_type: idx for idx, cell_type in enumerate(sorted(cell_type))}
@@ -108,6 +120,7 @@ def main():
     state_dict = torch.load(str(os.path.join(pretrain_path, args.pretrain_model_file)))
     model.load_state_dict(state_dict['module'])
     model = model.to(device)
+    
     adataset = DatasetMultiPad(*[adata], **pretrain_data_args)
     adata_dataloader = DataLoader(
         adataset, batch_size=args.batch_size, shuffle=False, pin_memory=True
@@ -118,8 +131,15 @@ def main():
         os.makedirs(args.output_path)
         logging.info(f"make directory {args.output_path}")
     adata.obsm['X_embedding'] = embeddings
-    adata.write_h5ad(os.path.join(args.output_path, "embeddings.h5ad"))
-    logging.info(f"Embeddings shape: {adata.obsm['X_embedding'].shape} saved to {args.output_path}")
+    
+    # When we run the model in parallel on low-memory gpus, split, otherwise run normally
+    if args.num_splits > 1:
+        output_file = f"embeddings_split_{args.split_idx}.h5ad"
+    else:
+        output_file = "embeddings.h5ad"
+    
+    adata.write_h5ad(os.path.join(args.output_path, output_file))
+    logging.info(f"Embeddings shape: {adata.obsm['X_embedding'].shape} saved to {os.path.join(args.output_path, output_file)}")
 
 
 if __name__ == '__main__':
