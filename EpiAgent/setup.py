@@ -12,17 +12,16 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
-        "numpy",
-        "pandas",
-        "scipy",
-        "scikit-learn",
-        "scanpy",
-        "torch>=2.0.0",  # PyTorch: Installation details in README.md
-        "transformers",
-        "anndata",
+        "numpy==1.26.4",
+        "pandas==2.2.3",
+        "scipy==1.16.3",
+        "scikit-learn==1.7.2",
+        "scanpy==1.11.5",
+        "transformers==4.35.2",
+        "anndata==0.12.6",
         "POT>=0.9.2",
-        "faiss",
-        "flash-attn>=2.5.7"  # Flash-Attention: Installation details in README.md
+        # "faiss", # need to conda install this when using pip install -e .
+        "flash-attn==2.5.8"  # Flash-Attention: Installation details in README.md
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
