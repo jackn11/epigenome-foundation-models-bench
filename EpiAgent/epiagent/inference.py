@@ -147,22 +147,23 @@ def infer_cell_types(model, device, dataloader, need_cell_embeddings=True):
         # Move input batch to the specified device
         input_ids = batch.to(device)
 
-        with autocast():  # Enable mixed precision for faster inference
-            # Get model predictions and optionally cell embeddings
-            if need_cell_embeddings:
-                predicted_label, embeddings = model(input_ids, need_cell_embeddings=True)
-                embeddings = embeddings.cpu().detach().numpy()
-                cell_embeddings.extend(embeddings)
-            else:
-                predicted_label = model(input_ids, need_cell_embeddings=False)
+        with torch.no_grad():  # Disable gradient computation for inference
+            with autocast():  # Enable mixed precision for faster inference
+                # Get model predictions and optionally cell embeddings
+                if need_cell_embeddings:
+                    predicted_label, embeddings = model(input_ids, need_cell_embeddings=True)
+                    embeddings = embeddings.cpu().detach().numpy()
+                    cell_embeddings.extend(embeddings)
+                else:
+                    predicted_label = model(input_ids, need_cell_embeddings=False)
 
-            # Convert predictions to probabilities and class indices
-            probabilities = torch.softmax(predicted_label, dim=1)
-            _, predicted_indices = torch.max(probabilities, dim=1)
+                # Convert predictions to probabilities and class indices
+                probabilities = torch.softmax(predicted_label, dim=1)
+                _, predicted_indices = torch.max(probabilities, dim=1)
 
-            # Store results
-            predicted_probabilities.extend(probabilities.cpu().detach().numpy())
-            predicted_classes.extend(predicted_indices.cpu().detach().numpy().tolist())
+                # Store results
+                predicted_probabilities.extend(probabilities.cpu().detach().numpy())
+                predicted_classes.extend(predicted_indices.cpu().detach().numpy().tolist())
 
     # Prepare the result dictionary
     results = {
