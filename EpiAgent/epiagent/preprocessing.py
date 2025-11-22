@@ -87,7 +87,7 @@ def global_TFIDF(adata, cCRE_document_frequency):
 
 def global_TFIDF_with_shuffling(adata, cCRE_document_frequency):
     """
-    Apply a global TF-IDF transformation to the input AnnData object.
+    Apply a global TF-IDF transformation to the input AnnData object and shuffle non-zero values in each row randomly.
     
     Parameters:
     - adata: AnnData
@@ -145,3 +145,52 @@ def global_TFIDF_with_shuffling(adata, cCRE_document_frequency):
     adata_copy.X.data = np.log1p(10000 * adata_copy.X.data)
 
     return adata_copy
+
+def global_TFIDF_with_complete_shuffling(adata, cCRE_document_frequency):
+    """
+    Apply a global TF-IDF transformation to the input AnnData object and shuffle all values randomly.
+    
+    Parameters:
+    - adata: AnnData
+        The input AnnData object containing the sparse matrix in `adata.X`.
+    - cCRE_document_frequency: ndarray
+        A 1D numpy array representing the document frequency for each cCRE (column).
+
+    Returns:
+    - AnnData
+        A new AnnData object with TF-IDF-transformed data in `adata.X`.
+    """
+    # Create a copy of the input AnnData object to avoid modifying the original
+    adata_copy = adata.copy()
+
+    #########################################################################################################################
+    # START OF COMPLETE SHUFFLING
+    #########################################################################################################################
+    
+    # Permute all values randomly
+    adata_copy.X.data = np.random.permutation(adata_copy.X.data)
+
+    #########################################################################################################################
+    # END OF COMPLETE SHUFFLING
+    #########################################################################################################################
+
+    # Step 1: Compute the reciprocal of column sums (document frequency)
+    cCRE_doc_frequency_inv = csr_matrix(np.reciprocal(cCRE_document_frequency))
+
+    # Step 2: Compute row sums (total counts per cell)
+    row_sums = adata_copy.X.sum(axis=1)
+    row_sums_inv = csr_matrix(np.reciprocal(row_sums.A.flatten()))  # Convert to CSR matrix for sparse multiplication
+
+    # Step 3: Normalize rows by row sums
+    adata_copy.X = adata_copy.X.multiply(row_sums_inv.T)
+
+    # Step 4: Normalize columns by document frequency
+    adata_copy.X = adata_copy.X.multiply(cCRE_doc_frequency_inv)
+
+    # Step 5: Apply log transformation to all non-zero elements
+    adata_copy.X.data = np.log1p(10000 * adata_copy.X.data)
+
+    return adata_copy
+
+def f(a, b):
+    return a + b
