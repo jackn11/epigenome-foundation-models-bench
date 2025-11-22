@@ -21,7 +21,8 @@ setup(
         "anndata==0.12.6",
         "POT>=0.9.2",
         # "faiss", # need to conda install this when using pip install -e .
-        "flash-attn==2.5.8"  # Flash-Attention: Installation details in README.md
+        "flash-attn==2.5.8",  # Flash-Attention: Installation details in README.md
+        "leidenalg==0.11.0"
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
