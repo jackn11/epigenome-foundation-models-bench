@@ -191,6 +191,3 @@ def global_TFIDF_with_complete_shuffling(adata, cCRE_document_frequency):
     adata_copy.X.data = np.log1p(10000 * adata_copy.X.data)
 
     return adata_copy
-
-def f(a, b):
-    return a + b
