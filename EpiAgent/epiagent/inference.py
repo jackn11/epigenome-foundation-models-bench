@@ -3,6 +3,7 @@ import numpy as np
 from torch.cuda.amp import autocast
 from torch.utils.data import DataLoader
 from collections import Counter
+from tqdm import tqdm
 
 def infer_reconstructed_signals(model, device, dataloader, need_cell_embeddings=True, predicted_cCRE_indices=None):
     """
@@ -95,7 +96,7 @@ def infer_cell_embeddings(model, device, dataloader):
     cell_embeddings = []
 
     # Perform inference
-    for batch in dataloader:
+    for batch in tqdm(dataloader, desc="Extracting cell embeddings"):
         # Clear GPU cache
         torch.cuda.empty_cache()
 

@@ -4,6 +4,7 @@ import scanpy as sc
 import pandas as pd
 from scipy.sparse import csr_matrix
 from scipy.sparse import coo_matrix
+from tqdm import tqdm
 
 def construct_cell_by_ccre_matrix(intersect_file, ccre_bed_path):
     """
@@ -167,8 +168,42 @@ def global_TFIDF_with_complete_shuffling(adata, cCRE_document_frequency):
     # START OF COMPLETE SHUFFLING
     #########################################################################################################################
     
-    # Permute all values randomly
-    adata_copy.X.data = np.random.permutation(adata_copy.X.data)
+    total_nnz = adata_copy.X.nnz
+    new_data = np.empty(total_nnz, dtype=adata_copy.X.dtype)
+    new_indices = np.empty(total_nnz, dtype=adata_copy.X.indices.dtype)
+    new_indptr = np.zeros(adata_copy.X.shape[0] + 1, dtype=adata_copy.X.indptr.dtype)
+
+    current_idx = 0
+
+    for i in tqdm(range(adata_copy.X.shape[0]), desc="Shuffling rows"):
+        row_start = adata_copy.X.indptr[i]
+        row_end = adata_copy.X.indptr[i + 1]
+        num_nnz = row_end - row_start
+        
+        if num_nnz > 0:
+            # Get values (no copy needed)
+            row_vals = adata_copy.X.data[row_start:row_end]
+            
+            # Randomly sample column positions (efficient for large column spaces)
+            # np.random.choice is optimized for sampling small numbers from large ranges
+            shuffled_cols = np.random.choice(adata_copy.X.shape[1], size=num_nnz, replace=False)
+            
+            # Shuffle values
+            shuffled_vals = np.random.permutation(row_vals)
+            
+            # Sort by column while maintaining value-column correspondence
+            sort_idx = np.argsort(shuffled_cols)
+            new_data[current_idx:current_idx + num_nnz] = shuffled_vals[sort_idx]
+            new_indices[current_idx:current_idx + num_nnz] = shuffled_cols[sort_idx]
+            
+            current_idx += num_nnz
+        
+        new_indptr[i + 1] = current_idx
+
+    # Build the new sparse matrix
+    adata_copy_shuffled = csr_matrix((new_data, new_indices, new_indptr), shape=adata_copy.X.shape)
+
+    adata_copy.X = adata_copy_shuffled
 
     #########################################################################################################################
     # END OF COMPLETE SHUFFLING
