@@ -21,7 +21,7 @@ setup(
         "transformers",
         "anndata",
         "POT>=0.9.2",
-        "faiss",
+        # "faiss",
         "flash-attn>=2.5.7"  # Flash-Attention: Installation details in README.md
     ],
     classifiers=[

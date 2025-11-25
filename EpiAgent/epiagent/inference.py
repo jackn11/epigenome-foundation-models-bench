@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from tqdm import tqdm
 from torch.cuda.amp import autocast
 from torch.utils.data import DataLoader
 from collections import Counter
@@ -95,7 +96,7 @@ def infer_cell_embeddings(model, device, dataloader):
     cell_embeddings = []
 
     # Perform inference
-    for batch in dataloader:
+    for batch in tqdm(dataloader):
         # Clear GPU cache
         torch.cuda.empty_cache()
 
