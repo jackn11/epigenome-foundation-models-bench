@@ -45,7 +45,7 @@ def fine_tune_epiagent_for_UFE(
 
     # Set device to 'cuda' if available
     if device is None:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
     model.to(device)
 
     # Set up logging if required
@@ -927,3 +927,309 @@ def fine_tune_epiagent_for_RDI(
 def set_requires_grad(model, requires_grad):
     for param in model.parameters():
         param.requires_grad = requires_grad
+
+def pretrain_epiagent(
+    model,
+    train_dataloader,
+    num_epochs=12,
+    save_dir='../model/pretrain/',
+    device=None,
+    learning_rate=5e-5,
+    save_epochs=2,
+    log_steps=500,
+    warmup_steps=10000,
+    is_logging=True
+):
+    """
+    Pretrains EpiAgent model from scratch using three self-supervised tasks:
+    1. Cell-cCRE Alignment (CCA) - all 12 epochs with progressive difficulty
+    2. Signal Reconstruction (SR) - all 12 epochs
+    3. Replaced Language Modeling (RLM) - first 2 epochs only for stability
+    
+    The CCA task uses a progressive difficulty schedule:
+    - Epochs 0-3: α_alignment = 1 (easier)
+    - Epochs 4-7: α_alignment = 2 (moderate)
+    - Epochs 8-11: α_alignment = 5 (harder)
+    
+    Args:
+        model (nn.Module): The EpiAgent model to pretrain (should be initialized, not pretrained).
+        train_dataloader (DataLoader): DataLoader for the pretraining corpus.
+        num_epochs (int): Number of epochs to pretrain (default is 12 following the paper).
+        save_dir (str): Directory to save model checkpoints (default is '../model/pretrain/').
+        device (torch.device): The device to run training on (default is 'cuda' if available).
+        learning_rate (float): Learning rate for the optimizer (default is 5e-5).
+        save_epochs (int): Save the model every `save_epochs` epochs (default is 2).
+        log_steps (int): Log training details every `log_steps` steps (default is 500).
+        warmup_steps (int): Number of warm-up steps for the learning rate scheduler (default is 10000).
+        is_logging (bool): Whether to log and display training details (default is True).
+    
+    Returns:
+        nn.Module: The pretrained EpiAgent model.
+    """
+    
+    # Ensure the save directory exists
+    os.makedirs(save_dir, exist_ok=True)
+    print(f"Model directory created at: {save_dir}")
+    
+    # Set device to 'cuda' if available
+    if device is None:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model.to(device)
+    
+    # Set up logging if required
+    if is_logging:
+        log_file_path = os.path.join(save_dir, "pretrain_log.txt")
+        logging.basicConfig(
+            filename=log_file_path,
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s'
+        )
+        # Add a StreamHandler to output logs to console
+        console = logging.StreamHandler()
+        console.setLevel(logging.INFO)
+        logging.getLogger('').addHandler(console)
+    
+    # Initialize optimizer and learning rate scheduler
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=0.01)
+    
+    # Define a Noam learning rate scheduler
+    def noam_scheduler(step):
+        return min((step+1)**-0.5, (step+1)*(warmup_steps**-1.5))
+    
+    scheduler = LambdaLR(optimizer, lr_lambda=noam_scheduler)
+    
+    # Initialize gradient scaler for mixed precision training
+    scaler = GradScaler()
+    
+    # Training variables
+    global_step = 0
+    model.train()
+    
+    # Progressive difficulty schedule for CCA task
+    def get_alpha_alignment(epoch):
+        """Returns α_alignment based on current epoch following paper's schedule."""
+        if epoch < 4:
+            return 1  # Epochs 0-3: easier
+        elif epoch < 8:
+            return 2  # Epochs 4-7: moderate
+        else:
+            return 5  # Epochs 8-11: harder
+    
+    # Training loop over epochs
+    for epoch in range(num_epochs):
+        # Determine current pretraining parameters
+        alpha_alignment = get_alpha_alignment(epoch)
+        use_rlm = (epoch < 2)  # RLM only in first 2 epochs
+        
+        if is_logging:
+            logging.info(f"\n{'='*80}")
+            logging.info(f"Starting Epoch {epoch + 1}/{num_epochs}")
+            logging.info(f"α_alignment = {alpha_alignment}, RLM enabled = {use_rlm}")
+            logging.info(f"{'='*80}\n")
+        
+        # Initialize epoch-level loss tracking
+        if is_logging:
+            epoch_cca_loss = 0.0
+            epoch_sr_loss = 0.0
+            epoch_rlm_loss = 0.0
+            step_cca_loss = 0.0
+            step_sr_loss = 0.0
+            step_rlm_loss = 0.0
+            cell_ccre_accessibility_list = []
+            predicted_ccre_accessibility_list = []
+            if use_rlm:
+                rlm_accessibility_list = []
+                predicted_rlm_accessibility_list = []
+        
+        steps_in_epoch = len(train_dataloader)
+        
+        # Iterate through batches
+        for step, batch in enumerate(train_dataloader):
+            optimizer.zero_grad()
+            
+            # Move data to device
+            # Expected batch format: (cell_input_ids, signals, ex_cell_ccre_ids_for_CCA, 
+            #                         ex_cell_ccre_accessibility_for_CCA, [optional: ex_cell_ccre_accessibility_for_RLM])
+            cell_input_ids = batch[0].to(device)
+            signals = batch[1].to(device)
+            ex_cell_ccre_ids_for_CCA = [item.to(device) for item in batch[2]]
+            ex_cell_ccre_accessibility_for_CCA = batch[3].to(device)
+            
+            # For RLM task, we need the accessibility labels for the (potentially corrupted) input sequence
+            if use_rlm and len(batch) > 4:
+                ex_cell_ccre_accessibility_for_RLM = batch[4].to(device)
+            
+            with autocast():
+                # Forward pass through the model
+                outputs = model(
+                    input_ids=cell_input_ids,
+                    return_transformer_output=True,
+                    calculate_rlm_loss=use_rlm,
+                    calculate_cca_loss=True,
+                    calculate_sr_loss=True,
+                    ex_cell_ccre_ids=ex_cell_ccre_ids_for_CCA,
+                    ex_cell_ccre_accessibility=(ex_cell_ccre_accessibility_for_RLM if use_rlm 
+                                                 else ex_cell_ccre_accessibility_for_CCA),
+                    signals=signals
+                )
+                
+                # Retrieve losses
+                cca_loss = outputs['cca_loss']
+                sr_loss = outputs['sr_loss']
+                
+                # Compute total loss
+                if use_rlm:
+                    rlm_loss = outputs['rlm_loss']
+                    loss = cca_loss + sr_loss + rlm_loss
+                else:
+                    loss = cca_loss + sr_loss
+            
+            # Backpropagation with mixed precision
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+            scheduler.step()
+            
+            global_step += 1
+            
+            # Update loss tracking variables if logging is enabled
+            if is_logging:
+                # Accumulate losses
+                epoch_cca_loss += cca_loss.item()
+                epoch_sr_loss += sr_loss.item()
+                step_cca_loss += cca_loss.item()
+                step_sr_loss += sr_loss.item()
+                
+                if use_rlm:
+                    epoch_rlm_loss += rlm_loss.item()
+                    step_rlm_loss += rlm_loss.item()
+                
+                # Collect CCA predictions for monitoring (limit to 10,000 for efficiency)
+                predicted_ccre_accessibility = outputs['predicted_cca_accessibility']
+                if len(cell_ccre_accessibility_list) < 10000:
+                    cell_ccre_accessibility_list.extend(
+                        ex_cell_ccre_accessibility_for_CCA.cpu().numpy().tolist()
+                    )
+                    predicted_ccre_accessibility_list.extend(predicted_ccre_accessibility)
+                
+                # Collect RLM predictions if applicable
+                if use_rlm and len(rlm_accessibility_list) < 10000:
+                    predicted_rlm_accessibility = outputs['predicted_accessibility']
+                    rlm_accessibility_list.extend(
+                        ex_cell_ccre_accessibility_for_RLM.cpu().numpy().tolist()
+                    )
+                    predicted_rlm_accessibility_list.extend(predicted_rlm_accessibility)
+                
+                # Log training details every `log_steps` steps
+                if (global_step % log_steps) == 0:
+                    avg_cca_loss = step_cca_loss / log_steps
+                    avg_sr_loss = step_sr_loss / log_steps
+                    avg_total_loss = avg_cca_loss + avg_sr_loss
+                    
+                    log_message = (
+                        f"Epoch [{epoch + 1}/{num_epochs}], Step [{step + 1}/{steps_in_epoch}], "
+                        f"Total Loss: {avg_total_loss:.4f}, CCA Loss: {avg_cca_loss:.4f}, "
+                        f"SR Loss: {avg_sr_loss:.4f}"
+                    )
+                    
+                    if use_rlm:
+                        avg_rlm_loss = step_rlm_loss / log_steps
+                        avg_total_loss += avg_rlm_loss
+                        log_message += f", RLM Loss: {avg_rlm_loss:.4f}"
+                    
+                    logging.info(log_message)
+                    
+                    # Calculate CCA performance metrics
+                    def _calculate_metrics(true_labels, predicted_scores):
+                        """
+                        Calculates performance metrics for the Cell-cCRE Alignment (CCA) task.
+                        
+                        Args:
+                            true_labels (list): True accessibility labels (0 or 1).
+                            predicted_scores (list): Predicted accessibility scores.
+                        
+                        Returns:
+                            tuple: Positive accuracy, Negative accuracy, AUROC, AUPRC.
+                        """
+                        true_labels = np.array(true_labels)
+                        predicted_scores = np.array(predicted_scores)
+                        
+                        # Positive samples (accessible cCREs)
+                        ps_indices = true_labels > 0
+                        # Negative samples (inaccessible cCREs)
+                        ns_indices = true_labels == 0
+                        
+                        # Compute accuracies
+                        ps_acc = np.sum(predicted_scores[ps_indices] > 0) / np.sum(ps_indices) if np.sum(ps_indices) > 0 else 0
+                        ns_acc = np.sum(predicted_scores[ns_indices] < 0) / np.sum(ns_indices) if np.sum(ns_indices) > 0 else 0
+                        
+                        # Compute AUROC and AUPRC
+                        auroc = roc_auc_score(true_labels, predicted_scores) if len(np.unique(true_labels)) > 1 else 0.0
+                        auprc = average_precision_score(true_labels, predicted_scores) if len(np.unique(true_labels)) > 1 else 0.0
+                        
+                        return ps_acc, ns_acc, auroc, auprc
+                    
+                    # Calculate and log CCA metrics
+                    ps_acc, ns_acc, auroc, auprc = _calculate_metrics(
+                        cell_ccre_accessibility_list,
+                        predicted_ccre_accessibility_list
+                    )
+                    logging.info(
+                        f"CCA Metrics - Positive Acc: {ps_acc:.4f}, Negative Acc: {ns_acc:.4f}, "
+                        f"AUROC: {auroc:.4f}, AUPRC: {auprc:.4f}"
+                    )
+                    
+                    # Calculate and log RLM metrics if applicable
+                    if use_rlm and len(rlm_accessibility_list) > 0:
+                        rlm_ps_acc, rlm_ns_acc, rlm_auroc, rlm_auprc = _calculate_metrics(
+                            rlm_accessibility_list,
+                            predicted_rlm_accessibility_list
+                        )
+                        logging.info(
+                            f"RLM Metrics - Positive Acc: {rlm_ps_acc:.4f}, Negative Acc: {rlm_ns_acc:.4f}, "
+                            f"AUROC: {rlm_auroc:.4f}, AUPRC: {rlm_auprc:.4f}"
+                        )
+                    
+                    # Reset step losses and lists
+                    step_cca_loss = 0.0
+                    step_sr_loss = 0.0
+                    step_rlm_loss = 0.0
+                    cell_ccre_accessibility_list = []
+                    predicted_ccre_accessibility_list = []
+                    if use_rlm:
+                        rlm_accessibility_list = []
+                        predicted_rlm_accessibility_list = []
+        
+        # End of epoch logging
+        if is_logging:
+            epoch_avg_cca_loss = epoch_cca_loss / steps_in_epoch
+            epoch_avg_sr_loss = epoch_sr_loss / steps_in_epoch
+            epoch_total_loss = epoch_avg_cca_loss + epoch_avg_sr_loss
+            
+            log_message = (
+                f"\nEnd of Epoch {epoch + 1}/{num_epochs}\n"
+                f"Average CCA Loss: {epoch_avg_cca_loss:.4f}, "
+                f"Average SR Loss: {epoch_avg_sr_loss:.4f}"
+            )
+            
+            if use_rlm:
+                epoch_avg_rlm_loss = epoch_rlm_loss / steps_in_epoch
+                epoch_total_loss += epoch_avg_rlm_loss
+                log_message += f", Average RLM Loss: {epoch_avg_rlm_loss:.4f}"
+            
+            log_message += f"\nTotal Average Loss: {epoch_total_loss:.4f}\n"
+            logging.info(log_message)
+        
+        # Save model checkpoint every `save_epochs` epochs
+        if ((epoch + 1) % save_epochs) == 0 or (epoch + 1) == num_epochs:
+            checkpoint_path = os.path.join(save_dir, f"pretrain_epoch_{epoch + 1}.pth")
+            torch.save(model.state_dict(), checkpoint_path)
+            if is_logging:
+                logging.info(f"Model checkpoint saved at epoch {epoch + 1} to {checkpoint_path}\n")
+    
+    if is_logging:
+        logging.info(f"\n{'='*80}")
+        logging.info("Pretraining completed successfully!")
+        logging.info(f"{'='*80}\n")
+    
+    return model
