@@ -7,8 +7,13 @@ EpiAgent/external_data/*
 .vscode/MLProj2.code-workspace
 
 **/wandb/
-EpiAgent/epiagent.egg-info/PKG-INFO
-EpiAgent/epiagent.egg-info/SOURCES.txt
-EpiAgent/epiagent.egg-info/dependency_links.txt
-EpiAgent/epiagent.egg-info/requires.txt
-EpiAgent/epiagent.egg-info/top_level.txt
+
+ChromFound-Parallel/sample_data/PBMC169K/cell_embedding/embeddings.h5ad
+ChromFound-Parallel/sample_data/PBMC169K/cell_embedding/log_split_0.txt
+ChromFound-Parallel/sample_data/PBMC169K/cell_embedding/log_split_1.txt
+ChromFound-Parallel/sample_data/PBMC169K/cell_embedding/log_split_2.txt
+ChromFound-Parallel/sample_data/PBMC169K/cell_embedding/log_split_3.txt
+ChromFound-Parallel/sample_data/PBMC169K/atac_pbmc_benchmark_VIB_10xv1_1_qc_deepen_norm_log.h5ad
+ChromFound-Parallel/sample_data/PBMC169K/atac_pbmc_benchmark_VIB_10xv1_1.h5ad
+
+EpiAgent/epiagent.egg-info/*
