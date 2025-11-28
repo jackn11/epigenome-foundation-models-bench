@@ -1,18 +1,8 @@
 **/__pycache__
 
-EpiAgent/data/sample/raw_h5ad/Kanemaru2023_downsampled_10000_cells.h5ad
-EpiAgent/data/sample/raw_h5ad/Li2023b_downsampled_10000_cells.h5ad
-EpiAgent/data/sample/genetic_purturbation_data/All_data_K562_1.csv
-EpiAgent/data/sample/genetic_purturbation_data/gene2go_all.pkl
-EpiAgent/data/sample/genetic_purturbation_data/tfidf_data.h5ad
-EpiAgent/data/sample/processed_h5ad/query_data_downsampled_5000_cells.h5ad
-EpiAgent/data/sample/processed_h5ad/reference_data_downsampled_10000_cells.h5ad
-EpiAgent/data/cCRE_document_frequency.npy
-EpiAgent/data/cCRE.bed
-EpiAgent/data/sample/fragment/HCAHeartST10773171_HCAHeartST10781448.bed
-EpiAgent/data/sample/metadata.csv
-EpiAgent/model/EpiAgent-B/EpiAgent-B.pth
-EpiAgent/model/EpiAgent-NT/EpiAgent-NT.pth
+EpiAgent/data/*
+EpiAgent/model/*
+EpiAgent/external_data/*
 .vscode/extensions.json
 .vscode/MLProj2.code-workspace
 
