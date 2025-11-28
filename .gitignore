@@ -15,3 +15,10 @@ EpiAgent/model/EpiAgent-B/EpiAgent-B.pth
 EpiAgent/model/EpiAgent-NT/EpiAgent-NT.pth
 .vscode/extensions.json
 .vscode/MLProj2.code-workspace
+
+**/wandb/
+EpiAgent/epiagent.egg-info/PKG-INFO
+EpiAgent/epiagent.egg-info/SOURCES.txt
+EpiAgent/epiagent.egg-info/dependency_links.txt
+EpiAgent/epiagent.egg-info/requires.txt
+EpiAgent/epiagent.egg-info/top_level.txt
