@@ -17,3 +17,4 @@ ChromFound-Parallel/sample_data/PBMC169K/atac_pbmc_benchmark_VIB_10xv1_1_qc_deep
 ChromFound-Parallel/sample_data/PBMC169K/atac_pbmc_benchmark_VIB_10xv1_1.h5ad
 
 EpiAgent/epiagent.egg-info/*
+ChromFound/src/checkpoints/chromfd_pretrain.yaml
