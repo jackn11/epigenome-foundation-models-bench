@@ -1,0 +1,462 @@
+"""
+ChromFound Benchmarking Script
+
+This script runs the full ChromFound pipeline on the Kanemaru2023 dataset:
+1. Converts cCRE identifiers to genomic coordinates
+2. Preprocesses data (QC, normalization, log transform)
+3. Runs ChromFound inference to generate embeddings
+4. Applies PCA and Leiden clustering (matching EpiAgent approach)
+5. Calculates ARI and NMI metrics
+6. Saves results to benchmarks/results/chromfound/
+
+Run this in the chromfound conda environment:
+    conda activate chromfound
+    python benchmarks/scripts/run_chromfound_benchmark.py
+"""
+import os
+import sys
+import json
+import scanpy as sc
+import pandas as pd
+import numpy as np
+import subprocess
+from pathlib import Path
+from datetime import datetime
+from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
+from scipy.sparse import csr_matrix, vstack
+from joblib import Parallel, delayed
+import multiprocessing as mp
+
+# Conversion function is defined below
+
+# Import ChromFound preprocessing functions
+# Assuming we're running from project root, adjust path as needed
+_project_root = Path(__file__).parent.parent.parent
+_chromfound_path = _project_root / "ChromFound-Parallel"
+sys.path.insert(0, str(_chromfound_path))
+from src.data.atac_preprocess import deepen_atac_data
+
+
+def convert_ccre_to_genomic_coords(adata, inplace=True):
+    """
+    Convert cCRE identifiers in var.index to genomic coordinates.
+    
+    Parses identifiers in format "chr1:9848-10355" and adds:
+    - #Chromosome: chromosome name (e.g., "chr1")
+    - hg38_Start: start position as integer
+    - hg38_End: end position as integer
+    
+    The function is idempotent - it only adds columns if they don't already exist.
+    
+    Args:
+        adata: AnnData object with cCRE identifiers in var.index
+        inplace: If True, modify adata in place. If False, return a copy.
+    
+    Returns:
+        AnnData object with genomic coordinate columns added (or original if inplace=True)
+    """
+    import re
+    
+    if not inplace:
+        adata = adata.copy()
+    
+    # Check if columns already exist
+    required_cols = ['#Chromosome', 'hg38_Start', 'hg38_End']
+    if all(col in adata.var.columns for col in required_cols):
+        print("Genomic coordinate columns already exist. Skipping conversion.")
+        return adata
+    
+    print("Converting cCRE identifiers to genomic coordinates...")
+    
+    # Parse cCRE identifiers from var.index
+    # Format: "chr1:9848-10355" -> chromosome="chr1", start=9848, end=10355
+    pattern = re.compile(r'^(chr[XY\d]+):(\d+)-(\d+)$')
+    
+    chromosomes = []
+    starts = []
+    ends = []
+    
+    failed_parses = []
+    
+    for ccre_id in adata.var.index:
+        match = pattern.match(ccre_id)
+        if match:
+            chrom = match.group(1)
+            start = int(match.group(2))
+            end = int(match.group(3))
+            chromosomes.append(chrom)
+            starts.append(start)
+            ends.append(end)
+        else:
+            failed_parses.append(ccre_id)
+            # Default values for failed parses (shouldn't happen with proper cCRE format)
+            chromosomes.append("chr1")
+            starts.append(0)
+            ends.append(0)
+    
+    if failed_parses:
+        print(f"Warning: Failed to parse {len(failed_parses)} cCRE identifiers")
+        if len(failed_parses) <= 10:
+            print(f"Failed IDs: {failed_parses}")
+        else:
+            print(f"First 10 failed IDs: {failed_parses[:10]}")
+    
+    # Add columns to var
+    # Use index alignment to ensure proper assignment
+    adata.var['#Chromosome'] = pd.Series(chromosomes, index=adata.var.index)
+    adata.var['hg38_Start'] = pd.Series(starts, dtype=int, index=adata.var.index)
+    adata.var['hg38_End'] = pd.Series(ends, dtype=int, index=adata.var.index)
+    
+    print(f"Successfully converted {len(adata.var)} cCRE identifiers to genomic coordinates")
+    print(f"  Chromosomes: {pd.Series(chromosomes).value_counts().head(5).to_dict()}")
+    print(f"  Start range: {min(starts)} - {max(starts)}")
+    print(f"  End range: {min(ends)} - {max(ends)}")
+    
+    return adata
+
+
+def setup_paths():
+    """Set up all file paths for the benchmark."""
+    # Get project root (assuming script is in benchmarks/scripts/)
+    project_root = Path(__file__).parent.parent.parent
+    benchmarks_dir = project_root / "benchmarks"
+    
+    paths = {
+        "project_root": project_root,
+        "benchmarks_dir": benchmarks_dir,
+        "data_dir": benchmarks_dir / "data",
+        "results_dir": benchmarks_dir / "results" / "chromfound",
+        "input_data": benchmarks_dir / "data" / "Kanemaru2023_downsampled_10000_cells.h5ad",
+        "preprocessed_data": benchmarks_dir / "data" / "Kanemaru2023_chromfound_preprocessed.h5ad",
+        "embeddings": benchmarks_dir / "results" / "chromfound" / "embeddings.h5ad",
+        "metrics": benchmarks_dir / "results" / "chromfound" / "metrics.json",
+        "leiden_labels": benchmarks_dir / "results" / "chromfound" / "leiden_labels.h5ad",
+    }
+    
+    # Create results directory if it doesn't exist
+    paths["results_dir"].mkdir(parents=True, exist_ok=True)
+    
+    return paths
+
+
+def preprocess_data(paths, data_args):
+    """
+    Preprocess the data: convert cCREs to genomic coordinates, verify columns.
+    
+    Note: Quality control is skipped as benchmark datasets are already preprocessed.
+    
+    Args:
+        paths: Dictionary of file paths
+        data_args: Dictionary of preprocessing parameters
+    
+    Returns:
+        Path to preprocessed data file
+    """
+    print("\n" + "=" * 80)
+    print(f"STEP 1: Loading and Preprocessing Data")
+    print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 80)
+    
+    # Load data
+    print(f"Loading data from: {paths['input_data']}")
+    adata = sc.read_h5ad(paths['input_data'])
+    print(f"Original shape: {adata.shape}")
+    
+    # Convert cCRE identifiers to genomic coordinates (idempotent)
+    print("\nConverting cCRE identifiers to genomic coordinates...")
+    adata = convert_ccre_to_genomic_coords(adata, inplace=True)
+    
+    # Ensure coordinate columns are integers (only convert if not already int)
+    if 'hg38_Start' in adata.var.columns:
+        if adata.var['hg38_Start'].dtype != 'int64' and adata.var['hg38_Start'].dtype != 'int32':
+            # Check for NaN values before converting
+            if adata.var['hg38_Start'].isna().any():
+                print("Warning: hg38_Start contains NaN values. Filling with 0.")
+                adata.var['hg38_Start'] = adata.var['hg38_Start'].fillna(0)
+            adata.var['hg38_Start'] = adata.var['hg38_Start'].astype(int)
+    if 'hg38_End' in adata.var.columns:
+        if adata.var['hg38_End'].dtype != 'int64' and adata.var['hg38_End'].dtype != 'int32':
+            # Check for NaN values before converting
+            if adata.var['hg38_End'].isna().any():
+                print("Warning: hg38_End contains NaN values. Filling with 0.")
+                adata.var['hg38_End'] = adata.var['hg38_End'].fillna(0)
+            adata.var['hg38_End'] = adata.var['hg38_End'].astype(int)
+    
+    # Verify required columns exist for ChromFound
+    required_cols = ['#Chromosome', 'hg38_Start', 'hg38_End']
+    missing_cols = [col for col in required_cols if col not in adata.var.columns]
+    if missing_cols:
+        raise ValueError(f"Missing required columns in adata.var: {missing_cols}")
+    print(f"\n✓ Required columns verified: {required_cols}")
+    print(f"  Data shape: {adata.shape}")
+    
+    # Skip cell aggregation (num_cell_merge=1) to match EpiAgent's single-cell approach
+    # Or set to 1 to keep single cells
+    num_cell_merge = data_args.get("num_cell_merge", 1)
+    if num_cell_merge > 1:
+        print(f"\nPerforming cell aggregation (num_cell_merge={num_cell_merge})...")
+        adata = deepen_atac_data(adata, num_cell_merge=num_cell_merge)
+        print(f"After cell aggregation: {adata.shape}")
+    else:
+        print("\nSkipping cell aggregation (num_cell_merge=1, single-cell mode)")
+    
+    # Normalize and log transform
+    print("\nNormalizing and log transforming...")
+    print('  Normalizing...')
+    sc.pp.normalize_total(adata)
+    print('  Log transforming...')
+    sc.pp.log1p(adata)
+    print("  ✓ Normalization and log transform complete")
+    
+    # Add 'celltype' column for ChromFound compatibility (ChromFound code hardcodes 'celltype')
+    cell_type_col = data_args.get("cell_type_col", "cell_type")
+    if 'celltype' not in adata.obs.columns and cell_type_col in adata.obs.columns:
+        adata.obs['celltype'] = adata.obs[cell_type_col]
+        print(f"\nAdded 'celltype' column (copied from '{cell_type_col}') for ChromFound compatibility")
+    
+    # Save preprocessed data (use compression for speed/size tradeoff)
+    print(f"\nSaving preprocessed data to: {paths['preprocessed_data']}")
+    # Use compression level 1 for faster writes (default is 4)
+    adata.write_h5ad(paths['preprocessed_data'], compression='gzip', compression_opts=1)
+    
+    print(f"\n✓ STEP 1 COMPLETE at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  Preprocessed data saved: {paths['preprocessed_data']}")
+    
+    return paths['preprocessed_data']
+
+
+def run_inference(paths, inference_config, data_args):
+    """
+    Run ChromFound inference to generate cell embeddings.
+    
+    Args:
+        paths: Dictionary of file paths
+        inference_config: Dictionary of inference parameters
+        data_args: Dictionary of data parameters
+    
+    Returns:
+        Path to embeddings file
+    """
+    print("\n" + "=" * 80)
+    print(f"STEP 2: Running ChromFound Inference")
+    print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 80)
+    
+    # Build inference command
+    inference_command = [
+        sys.executable, '-m', 'src.cell_embedding',
+        '--local_rank', str(inference_config["device"]),
+        '--data_path', str(paths['preprocessed_data']),
+        '--output_path', str(paths['results_dir']),
+        '--pretrain_checkpoint_path', str(inference_config["pretrain_checkpoint_path"]),
+        '--pretrain_model_file', inference_config["pretrain_model_name"],
+        '--pretrain_config_file', inference_config["pretrain_config_file"],
+        '--batch_size', str(inference_config["batch_size"]),
+        '--cell_type_col', data_args["cell_type_col"]
+    ]
+    
+    print(f"\nRunning inference command...")
+    print(f"  Device: GPU {inference_config['device']}")
+    print(f"  Batch size: {inference_config['batch_size']}")
+    print(f"  Model: {inference_config['pretrain_model_name']}")
+    print(f"  Input: {paths['preprocessed_data']}")
+    print(f"  Output: {paths['results_dir']}")
+    print(f"\nNote: This step may take several minutes. Progress will be shown below...")
+    print("-" * 80)
+    
+    # Change to ChromFound directory for inference
+    original_cwd = os.getcwd()
+    _chromfound_path = Path(__file__).parent.parent.parent / "ChromFound-Parallel"
+    try:
+        os.chdir(str(_chromfound_path))
+        result = subprocess.run(inference_command, check=True)
+    finally:
+        os.chdir(original_cwd)
+    
+    # ChromFound saves embeddings as embeddings.h5ad in output_path
+    embeddings_path = paths['results_dir'] / "embeddings.h5ad"
+    
+    if not embeddings_path.exists():
+        raise FileNotFoundError(f"Embeddings not found at {embeddings_path}")
+    
+    print("-" * 80)
+    print(f"\n✓ STEP 2 COMPLETE at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  Embeddings saved to: {embeddings_path}")
+    return embeddings_path
+
+
+def cluster_and_evaluate(paths, leiden_resolution=0.45):
+    """
+    Apply PCA, Leiden clustering, and calculate metrics.
+    
+    Uses the same approach as EpiAgent: PCA -> neighbors -> Leiden clustering.
+    
+    Args:
+        paths: Dictionary of file paths
+        leiden_resolution: Resolution parameter for Leiden clustering
+    
+    Returns:
+        Dictionary with metrics (ARI, NMI, etc.)
+    """
+    print("\n" + "=" * 80)
+    print(f"STEP 3: Clustering and Evaluation")
+    print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 80)
+    
+    # Load embeddings
+    print(f"\nLoading embeddings from: {paths['embeddings']}")
+    adata = sc.read_h5ad(paths['embeddings'])
+    
+    # Extract embeddings and cell type labels
+    if 'X_embedding' in adata.obsm:
+        embeddings = adata.obsm['X_embedding']
+        print(f"Embeddings shape: {embeddings.shape}")
+    else:
+        raise KeyError("X_embedding not found in adata.obsm")
+    
+    # Get cell type column name (prefer 'cell_type' to match EpiAgent, but fallback to 'celltype')
+    cell_type_col = None
+    for col in ['cell_type', 'celltype']:
+        if col in adata.obs.columns:
+            cell_type_col = col
+            break
+    
+    if cell_type_col is None:
+        raise KeyError("Cell type column not found in adata.obs")
+    
+    # Create new AnnData with embeddings
+    obs_df = pd.DataFrame(adata.obs[cell_type_col].tolist(), columns=[cell_type_col])
+    adata_emb = sc.AnnData(X=embeddings, obs=obs_df)
+    
+    # Apply PCA (reduce dimensionality)
+    print("\n[3.1] Applying PCA (reducing dimensionality)...")
+    n_pcs = 50  # Use more PCs than EpiAgent's default, adjust as needed
+    sc.tl.pca(adata_emb, n_comps=n_pcs)
+    print(f"  ✓ PCA complete: {n_pcs} principal components")
+    
+    # Compute neighbors graph
+    print("\n[3.2] Computing neighbors graph...")
+    sc.pp.neighbors(adata_emb, n_neighbors=15, use_rep='X_pca')
+    print("  ✓ Neighbors graph computed")
+    
+    # Compute UMAP for visualization
+    print("\n[3.3] Computing UMAP...")
+    sc.tl.umap(adata_emb)
+    print("  ✓ UMAP computed")
+    
+    # Leiden clustering (matching EpiAgent approach)
+    print(f"\n[3.4] Performing Leiden clustering (resolution={leiden_resolution})...")
+    sc.tl.leiden(adata_emb, resolution=leiden_resolution, key_added='leiden', random_state=42)
+    
+    n_clusters = len(adata_emb.obs['leiden'].unique())
+    print(f"Number of Leiden clusters: {n_clusters}")
+    
+    # Calculate metrics
+    true_labels = adata_emb.obs[cell_type_col].values
+    predicted_labels = adata_emb.obs['leiden'].values
+    
+    ari_score = adjusted_rand_score(true_labels, predicted_labels)
+    nmi_score = normalized_mutual_info_score(true_labels, predicted_labels)
+    
+    print(f"\nMetrics:")
+    print(f"  ARI (Adjusted Rand Index): {ari_score:.4f}")
+    print(f"  NMI (Normalized Mutual Information): {nmi_score:.4f}")
+    print(f"  Number of true cell types: {len(np.unique(true_labels))}")
+    print(f"  Number of predicted clusters: {n_clusters}")
+    
+    # Save results
+    metrics = {
+        "model": "chromfound",
+        "ari": float(ari_score),
+        "nmi": float(nmi_score),
+        "n_clusters": int(n_clusters),
+        "n_cells": int(adata_emb.n_obs),
+        "n_cell_types": int(len(np.unique(true_labels))),
+        "leiden_resolution": float(leiden_resolution),
+        "n_pcs": int(n_pcs)
+    }
+    
+    print(f"\nSaving metrics to: {paths['metrics']}")
+    with open(paths['metrics'], 'w') as f:
+        json.dump(metrics, f, indent=2)
+    
+    # Save Leiden labels
+    print(f"Saving Leiden labels to: {paths['leiden_labels']}")
+    adata_emb.write_h5ad(paths['leiden_labels'])
+    
+    # Save embeddings with clustering results
+    print(f"\n[3.5] Saving results...")
+    print(f"  Saving embeddings with clustering to: {paths['embeddings']}")
+    adata_emb.write_h5ad(paths['embeddings'])
+    
+    print(f"\n✓ STEP 3 COMPLETE at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    return metrics
+
+
+def main():
+    """Main benchmarking pipeline."""
+    print("\n" + "=" * 80)
+    print("ChromFound Benchmarking Pipeline")
+    print("=" * 80)
+    print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("\nPipeline overview:")
+    print("  1. Load data and convert cCRE identifiers to genomic coordinates")
+    print("  2. Preprocess: Quality control, normalization, log transform")
+    print("  3. Run ChromFound inference to generate cell embeddings")
+    print("  4. Apply PCA, neighbors, UMAP, and Leiden clustering")
+    print("  5. Calculate ARI and NMI metrics")
+    print("=" * 80)
+    
+    # Setup paths
+    paths = setup_paths()
+    print(f"\nOutput directory: {paths['results_dir']}")
+    
+    # Configuration
+    data_args = {
+        "cell_type_col": "cell_type",  # Kanemaru dataset uses 'cell_type'
+        "num_cell_merge": 1,  # Set to 1 for single-cell (matching EpiAgent)
+    }
+    
+    _chromfound_path = Path(__file__).parent.parent.parent / "ChromFound-Parallel"
+    inference_config = {
+        "pretrain_checkpoint_path": str(_chromfound_path / "src" / "checkpoints"),
+        "pretrain_model_name": "model.pt",
+        "pretrain_config_file": "chromfd_pretrain.yaml",
+        "batch_size": 12,
+        "device": 5,  # Adjust GPU device as needed
+    }
+    
+    # Run pipeline
+    try:
+        # Step 1: Preprocess
+        preprocess_data(paths, data_args)
+        
+        # Step 2: Run inference
+        run_inference(paths, inference_config, data_args)
+        
+        # Step 3: Cluster and evaluate
+        metrics = cluster_and_evaluate(paths, leiden_resolution=0.45)
+        
+        print("\n" + "=" * 80)
+        print("BENCHMARKING COMPLETE")
+        print("=" * 80)
+        print(f"Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"\nResults saved to: {paths['results_dir']}")
+        print(f"\nFinal Metrics:")
+        print(f"  ARI (Adjusted Rand Index): {metrics['ari']:.4f}")
+        print(f"  NMI (Normalized Mutual Information): {metrics['nmi']:.4f}")
+        print(f"  Number of clusters: {metrics['n_clusters']}")
+        print(f"  Number of cell types: {metrics['n_cell_types']}")
+        print("=" * 80)
+        
+    except Exception as e:
+        print(f"\nERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
+
