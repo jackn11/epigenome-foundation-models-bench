@@ -17,6 +17,9 @@ import io
 from PIL import Image
 from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 import matplotlib.pyplot as plt
+from scib.metrics import silhouette, silhouette_batch
+
+from benchmark_utils import prepare_img, find_leiden_resolution_for_n_clusters
 
 
 
@@ -28,25 +31,22 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed_all(SEED)
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-wandb.init(project="zero-shot-feature-extraction", name=f"zero_shot_embeddings_Ameen2022_full_{timestamp}")
+wandb.init(project="zero-shot-feature-extraction", name=f"zero_shot_embeddings_Kanemaru2023_full_{timestamp}")
 
-dataset_name = 'Ameen2022_invitro'
+dataset_name = 'Kanemaru2023'
+batch_key = 'batch_key'
 
 # Load the dataset
 print("Loading the dataset...")
-# input_path = '../data/sample/raw_h5ad/Kanemaru2023_downsampled_10000_cells.h5ad'
-# input_path = '/scratch/naimer/Kanemaru2023/Kanemaru2023-cardiac_tissue/Kanemaru2023-cardiac_tissue-cell_by_cCRE.h5ad'
-# input_path = '/scratch/naimer/Li2023b/Li2023b-brain_tissue/Li2023b-brain_tissue-cell_by_cCRE.h5ad'
-input_path = '/scratch/naimer/Ameen2022/Ameen2022-cardiac_tissue/Ameen2022-cardiac_tissue-cell_by_cCRE.h5ad'
+input_path = '../data/Kanemaru2023/Kanemaru2023-cardiac_tissue/Kanemaru2023-cardiac_tissue-cell_by_cCRE.h5ad'
 adata = sc.read_h5ad(input_path)
-adata = adata[:1000]
 
 num_cell_types = len(adata.obs['cell_type'].unique())
 
 print(f"Number of cell types in the dataset: {num_cell_types}")
 
 # Load the cCRE document frequency data
-cCRE_document_frequency = np.load('/home/naimer/github/project-2-team-1-gal/EpiAgent/data/cCRE_document_frequency.npy')
+cCRE_document_frequency = np.load('../data/cCRE_document_frequency.npy')
 
 print("Applying TFIDF transformation...")
 
@@ -75,7 +75,7 @@ dataloader = DataLoader(cell_dataset, batch_size=batch_size, shuffle=False, num_
 
 # Load the pretrained model
 print("Loading the pretrained model...")
-model_path = '/home/naimer/github/project-2-team-1-gal/EpiAgent/model/pretrained_EpiAgent.pth'
+model_path = '../model/pretrained_EpiAgent.pth'
 device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
 
 pretrained_model = EpiAgent(vocab_size=1355449, num_layers=18, embedding_dim=512, num_attention_heads=8, max_rank_embeddings=8192, use_flash_attn=True, pos_weight_for_RLM=torch.tensor(1.), pos_weight_for_CCA=torch.tensor(1.))
@@ -86,94 +86,10 @@ print("Extracting cell embeddings...")
 cell_embeddings = infer_cell_embeddings(pretrained_model, device, dataloader)
 
 # Save cell embeddings to a file (e.g., numpy file)
-embedding_save_path = f'/scratch/naimer/{dataset_name}/{dataset_name}-cell_embeddings_{timestamp}.npy'
+os.makedirs(f'../data/saved_embeddings/{dataset_name}', exist_ok=True)
+embedding_save_path = f'../data/saved_embeddings/{dataset_name}/{dataset_name}-cell_embeddings_{timestamp}.npy'
 np.save(embedding_save_path, cell_embeddings)
 print(f"Cell embeddings saved to {embedding_save_path}")
-
-
-def prepare_img(fig):
-    """
-    Save matplotlib figure to PIL Image for wandb logging with high resolution.
-    
-    Args:
-        fig: matplotlib figure object
-        
-    Returns:
-        PIL Image object ready for wandb.Image()
-    """
-    # Save figure to buffer with high DPI and no cropping for wandb
-    buf = io.BytesIO()
-    fig.savefig(buf, format='png', dpi=300, bbox_inches='tight', pad_inches=0.1, facecolor='white')
-    buf.seek(0)
-    img = Image.open(buf)
-    return img
-
-
-def find_leiden_resolution_for_n_clusters(adata, target_n_clusters, min_res=0.1, max_res=1.0, 
-                                          max_iterations=30, tolerance=0, random_state=42):
-    """
-    Use binary search to find the Leiden resolution parameter that produces exactly the target number of clusters.
-    
-    Args:
-        adata: AnnData object with neighbors already computed
-        target_n_clusters: Target number of clusters (default: 12)
-        min_res: Minimum resolution to search (default: 0.4)
-        max_res: Maximum resolution to search (default: 0.7)
-        max_iterations: Maximum number of binary search iterations (default: 20)
-        tolerance: Acceptable difference from target (default: 0, meaning exact match)
-        random_state: Random state for reproducibility
-        
-    Returns:
-        Tuple of (optimal_resolution, actual_n_clusters)
-    """
-    low, high = min_res, max_res
-    best_resolution = None
-    best_n_clusters = None
-    best_diff = float('inf')
-    
-    print(f"Binary search for resolution to get {target_n_clusters} clusters...")
-    
-    for iteration in range(max_iterations):
-        mid_res = (low + high) / 2.0
-        
-        # Perform Leiden clustering with current resolution
-        sc.tl.leiden(adata, resolution=mid_res, key_added='leiden', random_state=random_state)
-        n_clusters = len(adata.obs['leiden'].unique())
-        
-        print(f"  Iteration {iteration + 1}: resolution={mid_res:.4f}, n_clusters={n_clusters}")
-        
-        # Track the best result so far
-        diff = abs(n_clusters - target_n_clusters)
-        if diff < best_diff:
-            best_diff = diff
-            best_resolution = mid_res
-            best_n_clusters = n_clusters
-        
-        # Check if we've found the target
-        if abs(n_clusters - target_n_clusters) <= tolerance:
-            print(f"  ✓ Found exact match: resolution={mid_res:.4f}, n_clusters={n_clusters}")
-            return mid_res, n_clusters
-        
-        # Adjust search range
-        # Higher resolution typically means more clusters
-        if n_clusters < target_n_clusters:
-            low = mid_res
-        else:
-            high = mid_res
-        
-        # If the search range becomes too small, break
-        if high - low < 0.0001:
-            print(f"  Search range too small, stopping. Best: resolution={best_resolution:.4f}, n_clusters={best_n_clusters}")
-            break
-    
-    # If exact match not found, use the best result
-    print(f"  Using best result: resolution={best_resolution:.4f}, n_clusters={best_n_clusters} (diff={best_diff})")
-    
-    # Re-run with the best resolution to ensure adata has the correct clustering
-    sc.tl.leiden(adata, resolution=best_resolution, key_added='leiden', random_state=random_state)
-    
-    return best_resolution, best_n_clusters
-
 
 # Assign embeddings to the AnnData object
 adata_tfidf.obsm['cell_embeddings_zero_shot'] = cell_embeddings
@@ -238,15 +154,23 @@ ari_score = adjusted_rand_score(true_labels, predicted_labels)
 # Calculate NMI (Normalized Mutual Information)
 nmi_score = normalized_mutual_info_score(true_labels, predicted_labels)
 
+# Calculate Silhouette scores
+silhouette_score = silhouette(adata_tfidf, label_key='cell_type', embed='cell_embeddings_zero_shot')
+silhouette_batch_score = silhouette_batch(adata_tfidf, label_key='cell_type', batch_key=batch_key, embed='cell_embeddings_zero_shot')
+
 # Print the results
 print(f"Adjusted Rand Index (ARI): {ari_score:.4f}")
 print(f"Normalized Mutual Information (NMI): {nmi_score:.4f}")
+print(f"Silhouette score: {silhouette_score:.4f}")
+print(f"Silhouette batch score: {silhouette_batch_score:.4f}")
 print(f"\nNumber of true cell types: {len(adata_tfidf.obs['cell_type'].unique())}")
 print(f"Number of predicted clusters: {len(adata_tfidf.obs['leiden'].unique())}")
 
 wandb.log({
     "ARI_no_shuffling": ari_score,
-    "NMI_no_shuffling": nmi_score
+    "NMI_no_shuffling": nmi_score,
+    "Silhouette_no_shuffling": silhouette_score,
+    "Silhouette_batch_no_shuffling": silhouette_batch_score
 })
 
 
@@ -330,15 +254,23 @@ ari_score = adjusted_rand_score(true_labels, predicted_labels)
 # Calculate NMI (Normalized Mutual Information)
 nmi_score = normalized_mutual_info_score(true_labels, predicted_labels)
 
+# Calculate Silhouette scores
+silhouette_score = silhouette(adata_tfidf_perm, label_key='cell_type', embed='cell_embeddings_zero_shot')
+silhouette_batch_score = silhouette_batch(adata_tfidf_perm, label_key='cell_type', batch_key=batch_key, embed='cell_embeddings_zero_shot')
+
 # Print the results
 print(f"Adjusted Rand Index (ARI): {ari_score:.4f}")
 print(f"Normalized Mutual Information (NMI): {nmi_score:.4f}")
+print(f"Silhouette score: {silhouette_score:.4f}")
+print(f"Silhouette batch score: {silhouette_batch_score:.4f}")
 print(f"\nNumber of true cell types: {len(adata_tfidf_perm.obs['cell_type'].unique())}")
 print(f"Number of predicted clusters: {len(adata_tfidf_perm.obs['leiden'].unique())}")
 
 wandb.log({
     "ARI_permuted_labels": ari_score,
-    "NMI_permuted_labels": nmi_score
+    "NMI_permuted_labels": nmi_score,
+    "Silhouette_permuted_labels": silhouette_score,
+    "Silhouette_batch_permuted_labels": silhouette_batch_score
 })
 
 
@@ -422,13 +354,21 @@ ari_score = adjusted_rand_score(true_labels, predicted_labels)
 # Calculate NMI (Normalized Mutual Information)
 nmi_score = normalized_mutual_info_score(true_labels, predicted_labels)
 
+# Calculate Silhouette scores
+silhouette_score = silhouette(adata_tfidf_perm_complete, label_key='cell_type', embed='cell_embeddings_zero_shot')
+silhouette_batch_score = silhouette_batch(adata_tfidf_perm_complete, label_key='cell_type', batch_key=batch_key, embed='cell_embeddings_zero_shot')
+
 # Print the results
 print(f"Adjusted Rand Index (ARI): {ari_score:.4f}")
 print(f"Normalized Mutual Information (NMI): {nmi_score:.4f}")
+print(f"Silhouette score: {silhouette_score:.4f}")
+print(f"Silhouette batch score: {silhouette_batch_score:.4f}")
 print(f"\nNumber of true cell types: {len(adata_tfidf_perm_complete.obs['cell_type'].unique())}")
 print(f"Number of predicted clusters: {len(adata_tfidf_perm_complete.obs['leiden'].unique())}")
 
 wandb.log({
     "ARI_complete_shuffling": ari_score,
-    "NMI_complete_shuffling": nmi_score
+    "NMI_complete_shuffling": nmi_score,
+    "Silhouette_complete_shuffling": silhouette_score,
+    "Silhouette_batch_complete_shuffling": silhouette_batch_score
 })
