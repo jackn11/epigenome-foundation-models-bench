@@ -82,6 +82,7 @@ The following versions have been tested and verified to work together:
 - scikit-learn: 1.7.2
 - scanpy: 1.10.4
 - episcanpy: 0.3.1
+- wandb: 0.23.0
 
 
 ## Quick Start
