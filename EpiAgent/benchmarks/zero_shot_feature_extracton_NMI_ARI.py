@@ -31,15 +31,15 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed_all(SEED)
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-wandb.init(project="zero-shot-feature-extraction", name=f"test_{timestamp}")
+wandb.init(project="zero-shot-feature-extraction", name=f"zero_shot_embeddings_Kanemaru2023_full_{timestamp}")
 
 dataset_name = 'Kanemaru2023'
+batch_key = 'batch_key'
 
 # Load the dataset
 print("Loading the dataset...")
 input_path = '../data/Kanemaru2023/Kanemaru2023-cardiac_tissue/Kanemaru2023-cardiac_tissue-cell_by_cCRE.h5ad'
 adata = sc.read_h5ad(input_path)
-adata = adata[:1000]
 
 num_cell_types = len(adata.obs['cell_type'].unique())
 
@@ -156,7 +156,7 @@ nmi_score = normalized_mutual_info_score(true_labels, predicted_labels)
 
 # Calculate Silhouette scores
 silhouette_score = silhouette(adata_tfidf, label_key='cell_type', embed='cell_embeddings_zero_shot')
-silhouette_batch_score = silhouette_batch(adata_tfidf, label_key='cell_type', batch_key='batch_key', embed='cell_embeddings_zero_shot')
+silhouette_batch_score = silhouette_batch(adata_tfidf, label_key='cell_type', batch_key=batch_key, embed='cell_embeddings_zero_shot')
 
 # Print the results
 print(f"Adjusted Rand Index (ARI): {ari_score:.4f}")
@@ -256,7 +256,7 @@ nmi_score = normalized_mutual_info_score(true_labels, predicted_labels)
 
 # Calculate Silhouette scores
 silhouette_score = silhouette(adata_tfidf_perm, label_key='cell_type', embed='cell_embeddings_zero_shot')
-silhouette_batch_score = silhouette_batch(adata_tfidf_perm, label_key='cell_type', batch_key='batch_key', embed='cell_embeddings_zero_shot')
+silhouette_batch_score = silhouette_batch(adata_tfidf_perm, label_key='cell_type', batch_key=batch_key, embed='cell_embeddings_zero_shot')
 
 # Print the results
 print(f"Adjusted Rand Index (ARI): {ari_score:.4f}")
@@ -356,7 +356,7 @@ nmi_score = normalized_mutual_info_score(true_labels, predicted_labels)
 
 # Calculate Silhouette scores
 silhouette_score = silhouette(adata_tfidf_perm_complete, label_key='cell_type', embed='cell_embeddings_zero_shot')
-silhouette_batch_score = silhouette_batch(adata_tfidf_perm_complete, label_key='cell_type', batch_key='batch_key', embed='cell_embeddings_zero_shot')
+silhouette_batch_score = silhouette_batch(adata_tfidf_perm_complete, label_key='cell_type', batch_key=batch_key, embed='cell_embeddings_zero_shot')
 
 # Print the results
 print(f"Adjusted Rand Index (ARI): {ari_score:.4f}")
