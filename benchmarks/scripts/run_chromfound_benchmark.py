@@ -267,9 +267,14 @@ def run_inference(paths, inference_config, data_args):
     # Change to ChromFound directory for inference
     original_cwd = os.getcwd()
     _chromfound_path = Path(__file__).parent.parent.parent / "ChromFound-Parallel"
+    
+    # Set environment variable to help with CUDA memory fragmentation
+    env = os.environ.copy()
+    env['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+    
     try:
         os.chdir(str(_chromfound_path))
-        result = subprocess.run(inference_command, check=True)
+        result = subprocess.run(inference_command, check=True, env=env)
     finally:
         os.chdir(original_cwd)
     
@@ -412,10 +417,25 @@ def main():
     paths = setup_paths()
     print(f"\nOutput directory: {paths['results_dir']}")
     
+    # Ask user if they want to continue from step 2 or run from scratch
+    print("\n" + "-" * 80)
+    print("OPTIONS:")
+    print("  1. Run full pipeline from scratch (Step 1 → Step 2 → Step 3)")
+    print("  2. Continue from Step 2 (skip preprocessing, requires preprocessed data)")
+    print("-" * 80)
+    
+    while True:
+        choice = input("\nEnter choice (1 or 2): ").strip()
+        if choice in ['1', '2']:
+            break
+        print("Invalid choice. Please enter 1 or 2.")
+    
+    continue_from_step2 = (choice == '2')
+    
     # Configuration
     data_args = {
         "cell_type_col": "cell_type",  # Kanemaru dataset uses 'cell_type'
-        "num_cell_merge": 1,  # Set to 1 for single-cell (matching EpiAgent)
+        "num_cell_merge": 1,  # Set to 1 for single-cell (matching EpiAgent) - for memory analysis
     }
     
     _chromfound_path = Path(__file__).parent.parent.parent / "ChromFound-Parallel"
@@ -423,14 +443,26 @@ def main():
         "pretrain_checkpoint_path": str(_chromfound_path / "src" / "checkpoints"),
         "pretrain_model_name": "model.pt",
         "pretrain_config_file": "chromfd_pretrain.yaml",
-        "batch_size": 12,
+        "batch_size": 2,  # Reduced batch size for memory analysis (consistent with continue_from_step2)
         "device": 5,  # Adjust GPU device as needed
     }
     
     # Run pipeline
     try:
-        # Step 1: Preprocess
-        preprocess_data(paths, data_args)
+        if continue_from_step2:
+            # Check if preprocessed data exists
+            if not paths['preprocessed_data'].exists():
+                print(f"\nERROR: Preprocessed data not found at: {paths['preprocessed_data']}")
+                print("Please run the full pipeline first (choose option 1)")
+                sys.exit(1)
+            
+            print(f"\n✓ Preprocessed data found: {paths['preprocessed_data']}")
+            print("  Skipping Step 1 (preprocessing already done)")
+            print(f"\nUsing batch_size={inference_config['batch_size']} (reduced for memory analysis)")
+        else:
+            # Step 1: Preprocess
+            preprocess_data(paths, data_args)
+            print(f"\nUsing batch_size={inference_config['batch_size']} (reduced for memory analysis)")
         
         # Step 2: Run inference
         run_inference(paths, inference_config, data_args)
