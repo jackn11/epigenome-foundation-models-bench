@@ -61,21 +61,26 @@ def lsi(
 
     adata_use = adata.copy()
     if use_top_features:
-        adata_use.var['featurecounts'] = np.array(np.sum(adata_use.X, axis=0))[0]
+        # Efficient sparse-aware feature count calculation
+        featurecounts = np.asarray(adata_use.X.sum(axis=0)).ravel()
+        adata_use.var['featurecounts'] = featurecounts
         df_var = adata_use.var.sort_values(by='featurecounts')
         ecdf = ECDF(df_var['featurecounts'])
         df_var['percentile'] = ecdf(df_var['featurecounts'])
         df_var["selected_feature"] = (df_var['percentile'] > min_cutoff)
         adata_use.var = df_var.loc[adata_use.var.index, :]
 
-    # factor_size = int(np.median(np.array(np.sum(adata_use.X, axis=1))))
+    # Keep everything sparse - TF-IDF returns sparse, log1p preserves sparsity
     x_norm = np.log1p(tfidf(adata_use.X) * 1e4)
+    
     if use_top_features:
-        x_norm = x_norm.toarray()[:, adata_use.var["selected_feature"]]
-    else:
-        x_norm = x_norm.toarray()
+        # Convert boolean to integer indices for sparse matrix column subsetting
+        selected_idx = np.where(adata_use.var["selected_feature"].values)[0]
+        x_norm = x_norm[:, selected_idx]
+    
+    # TruncatedSVD natively supports sparse matrices - pass directly
     svd = sklearn.decomposition.TruncatedSVD(n_components=n_components, algorithm='arpack')
-    X_lsi = svd.fit_transform(x_norm)
+    X_lsi = svd.fit_transform(x_norm)  # x_norm stays sparse, output is dense (n_cells × n_components)
     X_lsi -= X_lsi.mean(axis=1, keepdims=True)
     X_lsi /= X_lsi.std(axis=1, ddof=1, keepdims=True)
     adata.obsm["X_lsi"] = X_lsi
@@ -98,7 +103,8 @@ def deepen_atac_data(adata, num_pc=50, num_cell_merge=10):
     for cell_atac in list(adata_atac_sample_cluster.obs.index):
         cell_atac = [cell_atac]
         cell_atac_index = np.where(adata_atac_sample_cluster.obs.index == cell_atac[0])[0]
-        cell_neighbor_idx = np.nonzero(adata_atac_sample_cluster.obsp['connectivities'].getcol(cell_atac_index).toarray())[0]
+        # Use .nonzero()[0] to get row indices directly from sparse column vector (memory efficient)
+        cell_neighbor_idx = adata_atac_sample_cluster.obsp['connectivities'].getcol(cell_atac_index).nonzero()[0]
         if num_cell_merge >= len(cell_neighbor_idx):
             cell_sample_atac = np.hstack([cell_atac_index, cell_neighbor_idx])
         else:
