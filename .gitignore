@@ -1,7 +1,13 @@
 **/__pycache__
+.RData
+.Rhistory
 
 EpiAgent/data/*
 EpiAgent/model/*
 EpiAgent/external_data/*
 .vscode/extensions.json
 .vscode/MLProj2.code-workspace
+EpiAgent/demo/**/*.h5ad
+EpiAgent/demo/**/*.npy
+EpiAgent/demo/**/*.csv
+EpiAgent/demo/*/
