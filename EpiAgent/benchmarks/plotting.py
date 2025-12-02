@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
 # data from wandb
 data = {
@@ -67,21 +68,21 @@ data = {
     }
 }
 
-# plot the data
+
+FIGURES_DIR = os.path.join(os.path.dirname(__file__), 'figures')
+os.makedirs(FIGURES_DIR, exist_ok=True)
 
 datasets = list(data.keys())
 conditions = ["no-permutation", "permuted-labels", "complete-shuffling"]
 x = np.arange(len(datasets))
-width = 0.25  # Width of bars
+width = 0.25
 
-# Colors for conditions
 colors = {
-    "no-permutation": "#2E86AB",      # Blue
-    "permuted-labels": "#A23B72",     # Purple
-    "complete-shuffling": "#F18F01"   # Orange
+    "no-permutation": "#2E86AB",
+    "permuted-labels": "#A23B72",
+    "complete-shuffling": "#F18F01"
 }
 
-# Plot NMI - separate figure
 fig1, ax1 = plt.subplots(figsize=(8, 6))
 for i, condition in enumerate(conditions):
     nmi_values = [data[dataset][condition]["NMI"] for dataset in datasets]
@@ -99,10 +100,9 @@ ax1.legend(loc='upper right', framealpha=0.9)
 ax1.axhline(y=0.5, color='gray', linestyle=':', alpha=0.5, linewidth=1)
 
 plt.tight_layout()
-plt.savefig('nmi_comparison.png', dpi=300, bbox_inches='tight')
+plt.savefig(os.path.join(FIGURES_DIR, 'nmi_comparison.png'), dpi=300, bbox_inches='tight')
 plt.close()
 
-# Plot ARI - separate figure
 fig2, ax2 = plt.subplots(figsize=(8, 6))
 for i, condition in enumerate(conditions):
     ari_values = [data[dataset][condition]["ARI"] for dataset in datasets]
@@ -120,18 +120,46 @@ ax2.legend(loc='upper right', framealpha=0.9)
 ax2.axhline(y=0.5, color='gray', linestyle=':', alpha=0.5, linewidth=1)
 
 plt.tight_layout()
-plt.savefig('ari_comparison.png', dpi=300, bbox_inches='tight')
+plt.savefig(os.path.join(FIGURES_DIR, 'ari_comparison.png'), dpi=300, bbox_inches='tight')
 plt.close()
 
-# Additional: Create a summary table visualization
-print("\n" + "="*80)
-print("SUMMARY TABLE")
-print("="*80)
-print(f"{'Dataset':<20} {'Condition':<20} {'NMI':<10} {'ARI':<10}")
-print("-"*80)
-for dataset in datasets:
-    for condition in conditions:
-        nmi = data[dataset][condition]["NMI"]
-        ari = data[dataset][condition]["ARI"]
-        print(f"{dataset:<20} {condition.replace('-', ' ').title():<20} {nmi:<10.4f} {ari:<10.4f}")
-print("="*80)
+fig3, ax3 = plt.subplots(figsize=(8, 6))
+for i, condition in enumerate(conditions):
+    asw_values = [data[dataset][condition]["ASW"] for dataset in datasets]
+    ax3.bar(x + i*width, asw_values, width, label=condition.replace("-", " ").title(), 
+            color=colors[condition], alpha=0.8, edgecolor='black', linewidth=0.5)
+
+ax3.set_xlabel('Dataset', fontsize=11, fontweight='bold')
+ax3.set_ylabel('Average Silhouette Width (ASW)', fontsize=11, fontweight='bold')
+ax3.set_title('ASW Comparison Across Datasets and Conditions', fontsize=12, fontweight='bold')
+ax3.set_xticks(x + width)
+ax3.set_xticklabels(datasets, rotation=0)
+ax3.set_ylim([0, 1.0])
+ax3.grid(axis='y', alpha=0.3, linestyle='--')
+# Add reference line at 0.5 (expected value for random assignment)
+ax3.axhline(y=0.5, color='red', linestyle='--', alpha=0.7, linewidth=1.5, label='Baseline')
+ax3.legend(loc='upper right', framealpha=0.9)
+
+plt.tight_layout()
+plt.savefig(os.path.join(FIGURES_DIR, 'asw_comparison.png'), dpi=300, bbox_inches='tight')
+plt.close()
+
+fig4, ax4 = plt.subplots(figsize=(8, 6))
+for i, condition in enumerate(conditions):
+    asw_batch_values = [data[dataset][condition]["ASW_batch"] for dataset in datasets]
+    ax4.bar(x + i*width, asw_batch_values, width, label=condition.replace("-", " ").title(), 
+            color=colors[condition], alpha=0.8, edgecolor='black', linewidth=0.5)
+
+ax4.set_xlabel('Dataset', fontsize=11, fontweight='bold')
+ax4.set_ylabel('Average Silhouette Width Batch (ASW_batch)', fontsize=11, fontweight='bold')
+ax4.set_title('ASW_batch Comparison Across Datasets and Conditions', fontsize=12, fontweight='bold')
+ax4.set_xticks(x + width)
+ax4.set_xticklabels(datasets, rotation=0)
+ax4.set_ylim([0, 1.0])
+ax4.grid(axis='y', alpha=0.3, linestyle='--')
+ax4.legend(loc='upper right', framealpha=0.9)
+ax4.axhline(y=0.5, color='gray', linestyle=':', alpha=0.5, linewidth=1)
+
+plt.tight_layout()
+plt.savefig(os.path.join(FIGURES_DIR, 'asw_batch_comparison.png'), dpi=300, bbox_inches='tight')
+plt.close()
