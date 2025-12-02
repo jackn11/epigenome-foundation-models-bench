@@ -31,14 +31,14 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed_all(SEED)
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-wandb.init(project="zero-shot-feature-extraction", name=f"zero_shot_embeddings_Kanemaru2023_full_{timestamp}")
+wandb.init(project="zero-shot-feature-extraction", name=f"zero_shot_embeddings_Li2023b_full_{timestamp}")
 
-dataset_name = 'Kanemaru2023'
-batch_key = 'batch_key'
+dataset_name = 'Li2023b'
+batch_key = 'Batch (HSC)'
 
 # Load the dataset
 print("Loading the dataset...")
-input_path = '../data/Kanemaru2023/Kanemaru2023-cardiac_tissue/Kanemaru2023-cardiac_tissue-cell_by_cCRE.h5ad'
+input_path = '../data/Li2023b/Li2023b-brain_tissue/Li2023b-brain_tissue-cell_by_cCRE.h5ad'
 adata = sc.read_h5ad(input_path)
 
 num_cell_types = len(adata.obs['cell_type'].unique())
