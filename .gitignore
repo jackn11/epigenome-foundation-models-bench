@@ -19,3 +19,5 @@ ChromFound-Parallel/sample_data/PBMC169K/atac_pbmc_benchmark_VIB_10xv1_1.h5ad
 EpiAgent/epiagent.egg-info/*
 benchmarks/data/Kanemaru2023_chromfound_preprocessed.h5ad
 benchmarks/data/Kanemaru2023_downsampled_10000_cells.h5ad
+
+EpiAgent/benchmarks/plots/*
