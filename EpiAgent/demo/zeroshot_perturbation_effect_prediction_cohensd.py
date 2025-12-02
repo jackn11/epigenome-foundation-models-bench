@@ -14,19 +14,24 @@ import hdbscan
 # 1. Configuration
 # ============================================================
 
-CSV_PATH = (
-    "/scratch/wkim/project-2-team-1/EpiAgent/external_data/"
-    "GSE168851_crispr_perturb/All_data_SpearATAC_K562_LargeScreen.csv"
-)
-
 PRETRAINED_MODEL_PATH = (
     "/scratch/wkim/project-2-team-1/EpiAgent/model/pretrained_EpiAgent.pth"
 )
 
-# which perturbations to analyze (must exist in CSV)
-GENES_OF_INTEREST = [
-    "sgGATA1", "sgMAX", "sgYY1",
-]
+CSV_PATH = "/scratch/wkim/project-2-team-1/EpiAgent/data/sample/genetic_perturbation_data/All_data_K562_1.csv"
+GENES_OF_INTEREST = ["CHD5", "KDM6A", "DNMT3A", "HDAC9", "PBRM1", "MBD1", "PRDM9", "ING1", "EZH2", "TET2", "ARID1A", "SETD2", "HIST1H3B", "PHF6", "ATRX", "H3F3B", "SMARCB1", "SMARCA4", "CHD8", "H3F3A", "CHD4"]
+
+# CSV_PATH = (
+#     "/scratch/wkim/project-2-team-1/EpiAgent/external_data/"
+#     "GSE168851_crispr_perturb/All_data_SpearATAC_K562_LargeScreen.csv"
+# )
+# GENES_OF_INTEREST = ["sgGATA1", "sgMAX", "sgYY1"]
+# GENES_OF_INTEREST = ['UNK', 'sgARID2', 'sgARID3A', 'sgATF1', 'sgATF3', 'sgBCLAF1', 'sgBRF2', 'sgCAD',
+#  'sgCDC5L', 'sgCEBPB', 'sgCEBPZ', 'sgCTCF', 'sgCUX1', 'sgELF1', 'sgFOSL1',
+#  'sgGABPA', 'sgGATA1', 'sgGTF2B', 'sgHINFP', 'sgHSPA5', 'sgKLF1', 'sgKLF16',
+#  'sgMAX', 'sgMYC', 'sgNFE2', 'sgNFYB', 'sgNRF1', 'sgPBX2', 'sgPOLR1D', 'sgREST',
+#  'sgRPL9', 'sgSETDB1', 'sgTBP', 'sgTFDP1', 'sgTHAP1', 'sgTRIM28', 'sgYY1',
+#  'sgZBTB11', 'sgZNF280A', 'sgZNF407', 'sgZZZ3', 'sgsgNT']
 
 CONTROL_LABEL = "control"        # we already remapped sgsgNT -> control
 UNK_LABEL = "UNK"                # will be dropped
@@ -41,11 +46,13 @@ K_NEIGHBORS = 20                # k for local neighborhood
 MIN_GENE_CELLS = 30             # skip genes with fewer cells
 SEED = 42
 
-OUTPUT_DIR = "./local_neighborhood_deviation_GSE168851"
+OUTPUT_DIR = "./local_neighborhood_deviation_K562"
+# OUTPUT_DIR = "./local_neighborhood_deviation_GSE168851"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Cache paths for embeddings
-CACHE_DIR = "./epiagent_embedding_cache_GSE168851"
+CACHE_DIR = "./epiagent_embedding_cache_K562"
+# CACHE_DIR = "./epiagent_embedding_cache_GSE168851"
 os.makedirs(CACHE_DIR, exist_ok=True)
 EMBEDDING_CACHE_PATH = os.path.join(CACHE_DIR, "cell_embeddings.npy")
 PERTURBATION_CACHE_PATH = os.path.join(CACHE_DIR, "perturbations.npy")
@@ -74,9 +81,10 @@ def load_metadata_and_cell_indices(csv_path):
     print(f"[INFO] Loading CSV from {csv_path}")
     df = pd.read_csv(csv_path, usecols=["cell_indices", "perturbation"])
 
-    # map sgsgNT -> control, drop UNK
+    # map sgsgNT -> control, drop UNK and NaNs
     df.loc[df["perturbation"] == "sgsgNT", "perturbation"] = CONTROL_LABEL
     df = df[df["perturbation"] != UNK_LABEL].reset_index(drop=True)
+    df = df.dropna(subset=["perturbation"]).reset_index(drop=True)
 
     print("[INFO] Parsing cell_indices...")
     cell_indices_list = [json.loads(s) for s in tqdm(df["cell_indices"].tolist())]
@@ -316,6 +324,44 @@ def summarize_and_plot_local_deviation(
     fig.savefig(out_path, dpi=200)
     plt.close(fig)
 
+    # ---- per-gene violin plot: control vs gene ----
+    fig_v, ax_v = plt.subplots(figsize=(5, 4))
+
+    # two groups: baseline (control↔control) and gene↔control
+    data_violin = [baseline_dists, gene_dists]
+
+    parts = ax_v.violinplot(
+        data_violin,
+        positions=[1, 2],
+        showmeans=True,
+        showextrema=True,
+        showmedians=False,
+    )
+
+    # Optional: slightly different facecolors
+    for i, pc in enumerate(parts['bodies']):
+        if i == 0:
+            pc.set_facecolor("lightblue")
+        else:
+            pc.set_facecolor("lightcoral")
+        pc.set_alpha(0.7)
+
+    ax_v.set_xticks([1, 2])
+    ax_v.set_xticklabels(
+        [f"control (n={n_ctrl})", f"{gene} (n={n_gene})"],
+        rotation=20,
+        ha="right",
+        fontsize=9,
+    )
+    ax_v.set_ylabel(f"Mean distance to {K_NEIGHBORS} nearest controls (L2)")
+    ax_v.set_title(f"Local k-NN distances: control vs {gene}")
+
+    fig_v.tight_layout()
+    violin_path = os.path.join(out_dir, f"local_knn_violin_{gene}.png")
+    fig_v.savefig(violin_path, dpi=200)
+    plt.close(fig_v)
+
+
     metrics = {
         "gene": gene,
         "n_ctrl": n_ctrl,
@@ -327,6 +373,48 @@ def summarize_and_plot_local_deviation(
         "cohens_d": cohens_d,
     }
     return metrics
+
+def compute_perturbation_directions(embeddings, perturbations, genes, control_label=CONTROL_LABEL):
+    """
+    Compute normalized perturbation direction vectors v_g = (mu_gene - mu_ctrl) / ||...||
+    for each gene in `genes`.
+
+    Returns:
+        genes_used: list of genes that had valid vectors
+        dir_matrix: np.ndarray of shape (len(genes_used), EMBED_DIM)
+    """
+    ctrl_mask = (perturbations == control_label)
+    if ctrl_mask.sum() == 0:
+        raise ValueError("No control cells found for computing perturbation directions.")
+
+    emb_ctrl = embeddings[ctrl_mask]
+    mu_ctrl = emb_ctrl.mean(axis=0)
+
+    dir_vectors = []
+    genes_used = []
+
+    for gene in genes:
+        gene_mask = (perturbations == gene)
+        if gene_mask.sum() == 0:
+            continue
+
+        emb_gene = embeddings[gene_mask]
+        mu_gene = emb_gene.mean(axis=0)
+        v = mu_gene - mu_ctrl
+        norm = np.linalg.norm(v)
+        if norm < 1e-8:
+            print(f"[WARN] Perturbation direction nearly zero for {gene}, skipping in correlation heatmap.")
+            continue
+
+        dir_vectors.append(v / norm)
+        genes_used.append(gene)
+
+    if len(dir_vectors) == 0:
+        return [], None
+
+    dir_matrix = np.vstack(dir_vectors)  # shape (G, 512)
+    return genes_used, dir_matrix
+
 
 # ============================================================
 # 8. Main
@@ -371,8 +459,88 @@ def main():
         csv_path = os.path.join(OUTPUT_DIR, "local_neighborhood_metrics.csv")
         df_metrics.to_csv(csv_path, index=False)
         print(f"[INFO] Saved metrics table to {csv_path}")
+        
+        # 6) Plot bar plot of Cohen's d for all genes
+        print("[INFO] Creating bar plot of Cohen's d for all genes...")
+        fig, ax = plt.subplots(figsize=(14, 6))
+        
+        # Sort by Cohen's d for better visualization
+        df_sorted = df_metrics.sort_values('cohens_d', ascending=False)
+        
+        genes = df_sorted['gene'].values
+        cohens_d_values = df_sorted['cohens_d'].values
+        
+        bars = ax.bar(range(len(genes)), cohens_d_values, alpha=0.7)
+        
+        # Color bars based on positive/negative values
+        for i, (bar, val) in enumerate(zip(bars, cohens_d_values)):
+            if val >= 0:
+                bar.set_color('red')
+            else:
+                bar.set_color('blue')
+        
+        ax.set_xlabel('Gene', fontsize=12)
+        ax.set_ylabel("Cohen's d", fontsize=12)
+        ax.set_title("Local Neighborhood Deviation Metric (Cohen's d) for All Genes", fontsize=14)
+        ax.set_xticks(range(len(genes)))
+        ax.set_xticklabels(genes, rotation=45, ha='right', fontsize=9)
+        ax.axhline(y=0, color='black', linestyle='-', linewidth=0.5)
+        ax.grid(axis='y', alpha=0.3, linestyle='--')
+        
+        fig.tight_layout()
+        bar_plot_path = os.path.join(OUTPUT_DIR, "cohens_d_barplot_all_genes.png")
+        fig.savefig(bar_plot_path, dpi=200, bbox_inches='tight')
+        plt.close(fig)
+        print(f"[INFO] Saved bar plot to {bar_plot_path}")
     else:
         print("[WARN] No metrics computed (check GENES_OF_INTEREST).")
+
+
+    # 7) Heatmap of gene–gene perturbation direction correlations
+    # print("[INFO] Computing gene–gene perturbation direction correlations...")
+
+    # # Use the same gene ordering as the bar plot (df_sorted)
+    # genes_for_dirs = df_sorted['gene'].values
+
+    # genes_used, dir_matrix = compute_perturbation_directions(
+    #     embeddings=embeddings,
+    #     perturbations=perturbations,
+    #     genes=genes_for_dirs,
+    #     control_label=CONTROL_LABEL,
+    # )
+
+    # if dir_matrix is not None and len(genes_used) > 1:
+    #     # cosine similarity matrix (G x G)
+    #     # because dir_matrix rows are unit vectors, dot products = cosines
+    #     corr_mat = np.matmul(dir_matrix, dir_matrix.T)
+
+    #     fig_h, ax_h = plt.subplots(figsize=(10, 8))
+    #     im = ax_h.imshow(
+    #         corr_mat,
+    #         vmin=-1.0, vmax=1.0,
+    #         cmap="coolwarm",
+    #         aspect="auto",
+    #     )
+
+    #     ax_h.set_xticks(range(len(genes_used)))
+    #     ax_h.set_yticks(range(len(genes_used)))
+    #     ax_h.set_xticklabels(genes_used, rotation=90, fontsize=7)
+    #     ax_h.set_yticklabels(genes_used, fontsize=7)
+
+    #     ax_h.set_title("Cosine similarity of perturbation directions in EpiAgent embedding space")
+
+    #     cbar = fig_h.colorbar(im, ax=ax_h)
+    #     cbar.set_label("Cosine similarity", rotation=90)
+
+    #     fig_h.tight_layout()
+    #     heatmap_path = os.path.join(OUTPUT_DIR, "perturbation_direction_correlation_heatmap.png")
+    #     fig_h.savefig(heatmap_path, dpi=200, bbox_inches='tight')
+    #     plt.close(fig_h)
+
+    #     print(f"[INFO] Saved perturbation direction correlation heatmap to {heatmap_path}")
+    # else:
+    #     print("[WARN] Not enough valid perturbation directions to build a heatmap.")
+
 
 
 if __name__ == "__main__":
