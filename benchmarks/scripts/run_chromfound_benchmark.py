@@ -26,6 +26,7 @@ from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 from scipy.sparse import csr_matrix, vstack
 from joblib import Parallel, delayed
 import multiprocessing as mp
+import wandb
 
 # Conversion function is defined below
 
@@ -115,22 +116,33 @@ def convert_ccre_to_genomic_coords(adata, inplace=True):
     return adata
 
 
-def setup_paths():
-    """Set up all file paths for the benchmark."""
+def setup_paths(num_cell_merge=1):
+    """Set up all file paths for the benchmark.
+    
+    Args:
+        num_cell_merge: Number of cells to merge (1 or 10). Used in file naming.
+    
+    Returns:
+        Dictionary of file paths
+    """
     # Get project root (assuming script is in benchmarks/scripts/)
     project_root = Path(__file__).parent.parent.parent
     benchmarks_dir = project_root / "benchmarks"
+    
+    # Create merge-specific directory and file names
+    merge_suffix = f"merge{num_cell_merge}"
+    results_subdir = benchmarks_dir / "results" / "chromfound" / merge_suffix
     
     paths = {
         "project_root": project_root,
         "benchmarks_dir": benchmarks_dir,
         "data_dir": benchmarks_dir / "data",
-        "results_dir": benchmarks_dir / "results" / "chromfound",
+        "results_dir": results_subdir,
         "input_data": benchmarks_dir / "data" / "Kanemaru2023_downsampled_10000_cells.h5ad",
-        "preprocessed_data": benchmarks_dir / "data" / "Kanemaru2023_chromfound_preprocessed.h5ad",
-        "embeddings": benchmarks_dir / "results" / "chromfound" / "embeddings.h5ad",
-        "metrics": benchmarks_dir / "results" / "chromfound" / "metrics.json",
-        "leiden_labels": benchmarks_dir / "results" / "chromfound" / "leiden_labels.h5ad",
+        "preprocessed_data": benchmarks_dir / "data" / f"Kanemaru2023_chromfound_preprocessed_{merge_suffix}.h5ad",
+        "embeddings": results_subdir / "embeddings.h5ad",
+        "metrics": results_subdir / "metrics.json",
+        "leiden_labels": results_subdir / "leiden_labels.h5ad",
     }
     
     # Create results directory if it doesn't exist
@@ -290,7 +302,7 @@ def run_inference(paths, inference_config, data_args):
     return embeddings_path
 
 
-def cluster_and_evaluate(paths, leiden_resolution=0.45):
+def cluster_and_evaluate(paths, leiden_resolution=0.45, num_cell_merge=1):
     """
     Apply PCA, Leiden clustering, and calculate metrics.
     
@@ -372,6 +384,7 @@ def cluster_and_evaluate(paths, leiden_resolution=0.45):
     # Save results
     metrics = {
         "model": "chromfound",
+        "num_cell_merge": int(num_cell_merge),
         "ari": float(ari_score),
         "nmi": float(nmi_score),
         "n_clusters": int(n_clusters),
@@ -384,6 +397,12 @@ def cluster_and_evaluate(paths, leiden_resolution=0.45):
     print(f"\nSaving metrics to: {paths['metrics']}")
     with open(paths['metrics'], 'w') as f:
         json.dump(metrics, f, indent=2)
+    
+    # Log to wandb if initialized
+    if wandb.run is not None:
+        wandb.log(metrics)
+    
+    return metrics
     
     # Save Leiden labels
     print(f"Saving Leiden labels to: {paths['leiden_labels']}")
@@ -413,13 +432,23 @@ def main():
     print("  5. Calculate ARI and NMI metrics")
     print("=" * 80)
     
-    # Setup paths
-    paths = setup_paths()
-    print(f"\nOutput directory: {paths['results_dir']}")
+    # Ask user for GPU selection
+    print("\n" + "-" * 80)
+    print("GPU SELECTION:")
+    print("-" * 80)
+    while True:
+        try:
+            gpu_choice = input("Enter GPU device number (e.g., 0, 1, 5): ").strip()
+            gpu_device = int(gpu_choice)
+            if gpu_device >= 0:
+                break
+            print("Invalid GPU number. Please enter a non-negative integer.")
+        except ValueError:
+            print("Invalid input. Please enter a number.")
     
     # Ask user if they want to continue from step 2 or run from scratch
     print("\n" + "-" * 80)
-    print("OPTIONS:")
+    print("PIPELINE OPTIONS:")
     print("  1. Run full pipeline from scratch (Step 1 → Step 2 → Step 3)")
     print("  2. Continue from Step 2 (skip preprocessing, requires preprocessed data)")
     print("-" * 80)
@@ -432,10 +461,46 @@ def main():
     
     continue_from_step2 = (choice == '2')
     
+    # Ask user for cell merge value
+    print("\n" + "-" * 80)
+    print("CELL MERGE OPTIONS:")
+    print("  1. num_cell_merge=1 (single-cell mode (true zero-shot))")
+    print("  2. num_cell_merge=10 (like in ChromFound paper)")
+    print("-" * 80)
+    
+    while True:
+        merge_choice = input("\nEnter choice (1 or 2): ").strip()
+        if merge_choice in ['1', '2']:
+            break
+        print("Invalid choice. Please enter 1 or 2.")
+    
+    num_cell_merge = 1 if merge_choice == '1' else 10
+    
+    # Setup paths with merge value
+    paths = setup_paths(num_cell_merge=num_cell_merge)
+    print(f"\nOutput directory: {paths['results_dir']}")
+    print(f"Using num_cell_merge={num_cell_merge}")
+    
+    # Initialize Weights & Biases
+    wandb.init(
+        project="chromfound-benchmark",
+        name=f"chromfound-merge{num_cell_merge}-gpu{gpu_device}",
+        tags=["chromfound", f"merge{num_cell_merge}", f"gpu{gpu_device}", "kanemaru2023"],
+        config={
+            "model": "chromfound",
+            "num_cell_merge": num_cell_merge,
+            "gpu_device": gpu_device,
+            "dataset": "Kanemaru2023",
+            "batch_size": 2,
+            "leiden_resolution": 0.45,
+            "n_pcs": 50,
+        }
+    )
+    
     # Configuration
     data_args = {
         "cell_type_col": "cell_type",  # Kanemaru dataset uses 'cell_type'
-        "num_cell_merge": 1,  # Set to 1 for single-cell (matching EpiAgent) - for memory analysis
+        "num_cell_merge": num_cell_merge,
     }
     
     _chromfound_path = Path(__file__).parent.parent.parent / "ChromFound-Parallel"
@@ -443,9 +508,15 @@ def main():
         "pretrain_checkpoint_path": str(_chromfound_path / "src" / "checkpoints"),
         "pretrain_model_name": "model.pt",
         "pretrain_config_file": "chromfd_pretrain.yaml",
-        "batch_size": 2,  # Reduced batch size for memory analysis (consistent with continue_from_step2)
-        "device": 5,  # Adjust GPU device as needed
+        "batch_size": 2,  # Reduced batch size for memory analysis
+        "device": gpu_device,
     }
+    
+    # Log configuration to wandb
+    wandb.config.update({
+        "batch_size": inference_config["batch_size"],
+        "pretrain_model_name": inference_config["pretrain_model_name"],
+    })
     
     # Run pipeline
     try:
@@ -453,39 +524,45 @@ def main():
             # Check if preprocessed data exists
             if not paths['preprocessed_data'].exists():
                 print(f"\nERROR: Preprocessed data not found at: {paths['preprocessed_data']}")
+                print(f"Expected file for num_cell_merge={num_cell_merge}")
                 print("Please run the full pipeline first (choose option 1)")
                 sys.exit(1)
             
             print(f"\n✓ Preprocessed data found: {paths['preprocessed_data']}")
             print("  Skipping Step 1 (preprocessing already done)")
-            print(f"\nUsing batch_size={inference_config['batch_size']} (reduced for memory analysis)")
+            print(f"\nUsing batch_size={inference_config['batch_size']}")
         else:
             # Step 1: Preprocess
             preprocess_data(paths, data_args)
-            print(f"\nUsing batch_size={inference_config['batch_size']} (reduced for memory analysis)")
+            print(f"\nUsing batch_size={inference_config['batch_size']}")
         
         # Step 2: Run inference
         run_inference(paths, inference_config, data_args)
         
         # Step 3: Cluster and evaluate
-        metrics = cluster_and_evaluate(paths, leiden_resolution=0.45)
+        metrics = cluster_and_evaluate(paths, leiden_resolution=0.45, num_cell_merge=num_cell_merge)
         
         print("\n" + "=" * 80)
         print("BENCHMARKING COMPLETE")
         print("=" * 80)
         print(f"Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"\nResults saved to: {paths['results_dir']}")
-        print(f"\nFinal Metrics:")
+        print(f"\nFinal Metrics (merge={num_cell_merge}):")
         print(f"  ARI (Adjusted Rand Index): {metrics['ari']:.4f}")
         print(f"  NMI (Normalized Mutual Information): {metrics['nmi']:.4f}")
         print(f"  Number of clusters: {metrics['n_clusters']}")
         print(f"  Number of cell types: {metrics['n_cell_types']}")
         print("=" * 80)
         
+        # Finalize wandb run
+        wandb.finish()
+        
     except Exception as e:
         print(f"\nERROR: {e}")
         import traceback
         traceback.print_exc()
+        if wandb.run is not None:
+            wandb.finish()
         sys.exit(1)
 
 
