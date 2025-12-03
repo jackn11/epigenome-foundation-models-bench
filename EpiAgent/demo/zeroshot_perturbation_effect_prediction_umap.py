@@ -17,17 +17,17 @@ from sklearn.manifold import TSNE
 # 1. Configuration
 # ---------------------------
 
-# CSV_PATH = "/scratch/wkim/project-2-team-1/EpiAgent/data/sample/genetic_perturbation_data/All_data_K562_1.csv"
-# GENES_OF_INTEREST = ["CHD5", "KDM6A", "DNMT3A", "HDAC9", "PBRM1", "MBD1", "PRDM9", "ING1", "EZH2", "TET2", "ARID1A", "SETD2", "HIST1H3B", "PHF6", "ATRX", "H3F3B", "SMARCB1", "SMARCA4", "CHD8", "H3F3A", "CHD4"]
+CSV_PATH = "/scratch/wkim/project-2-team-1/EpiAgent/data/sample/genetic_perturbation_data/All_data_K562_1.csv"
+GENES_OF_INTEREST = ["CHD5", "KDM6A", "DNMT3A", "HDAC9", "PBRM1", "MBD1", "PRDM9", "ING1", "EZH2", "TET2", "ARID1A", "SETD2", "HIST1H3B", "PHF6", "ATRX", "H3F3B", "SMARCB1", "SMARCA4", "CHD8", "H3F3A", "CHD4"]
 
-CSV_PATH = "/scratch/wkim/project-2-team-1/EpiAgent/external_data/GSE168851_crispr_perturb/All_data_SpearATAC_K562_LargeScreen.csv"
+# CSV_PATH = "/scratch/wkim/project-2-team-1/EpiAgent/external_data/GSE168851_crispr_perturb/All_data_SpearATAC_K562_LargeScreen.csv"
 # GENES_OF_INTEREST = ['UNK', 'sgARID2', 'sgARID3A', 'sgATF1', 'sgATF3', 'sgBCLAF1', 'sgBRF2', 'sgCAD',
 #  'sgCDC5L', 'sgCEBPB', 'sgCEBPZ', 'sgCTCF', 'sgCUX1', 'sgELF1', 'sgFOSL1',
 #  'sgGABPA', 'sgGATA1', 'sgGTF2B', 'sgHINFP', 'sgHSPA5', 'sgKLF1', 'sgKLF16',
 #  'sgMAX', 'sgMYC', 'sgNFE2', 'sgNFYB', 'sgNRF1', 'sgPBX2', 'sgPOLR1D', 'sgREST',
 #  'sgRPL9', 'sgSETDB1', 'sgTBP', 'sgTFDP1', 'sgTHAP1', 'sgTRIM28', 'sgYY1',
 #  'sgZBTB11', 'sgZNF280A', 'sgZNF407', 'sgZZZ3', 'sgsgNT']
-GENES_OF_INTEREST = ['sgGATA1', 'sgMAX', 'sgYY1']
+# GENES_OF_INTEREST = ['sgGATA1', 'sgMAX', 'sgYY1']
 
 PRETRAINED_MODEL_PATH = "/scratch/wkim/project-2-team-1/EpiAgent/model/pretrained_EpiAgent.pth"
 
@@ -46,12 +46,14 @@ MAX_SEQ_LEN = 8192
 SEED = 42
 
 # Output directory for plots
+OUTPUT_DIR = "./zeroshot_perturbation_effect_prediction_umaps_K562"
 # OUTPUT_DIR = "./zeroshot_perturbation_effect_prediction_umaps_GSE168851"
 # OUTPUT_DIR = "./zeroshot_perturbation_effect_prediction_PCA_on_controls_GSE168851"
-OUTPUT_DIR = "./zeroshot_perturbation_effect_prediction_tSNE"
+# OUTPUT_DIR = "./zeroshot_perturbation_effect_prediction_tSNE"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-CACHE_DIR = "./epiagent_embedding_cache_GSE168851"
+CACHE_DIR = "./epiagent_embedding_cache_K562"
+# CACHE_DIR = "./epiagent_embedding_cache_GSE168851"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 EMBEDDING_CACHE_PATH = os.path.join(CACHE_DIR, "cell_embeddings.npy")
@@ -384,49 +386,49 @@ def zero_shot_test_for_gene(gene, embeddings, perturbations, max_cells_per_group
 
     ##########################################################################
     # UMAP!! #################################################################
-    # print("[INFO] Running UMAP...")
-    # reducer = umap.UMAP(
-    #     n_components=2,
-    #     random_state=SEED,
-    #     n_neighbors=30,
-    #     min_dist=0.3,
-    #     metric="cosine",
-    # )
-    # X_umap = reducer.fit_transform(X)
+    print("[INFO] Running UMAP...")
+    reducer = umap.UMAP(
+        n_components=2,
+        random_state=SEED,
+        n_neighbors=30,
+        min_dist=0.3,
+        metric="cosine",
+    )
+    X_umap = reducer.fit_transform(X)
 
-    # # Plot
-    # print("[INFO] Plotting UMAP...")
-    # fig, ax = plt.subplots(figsize=(8, 8))
+    # Plot
+    print("[INFO] Plotting UMAP...")
+    fig, ax = plt.subplots(figsize=(8, 8))
 
-    # label_to_color = {
-    #     "control": "tab:blue",
-    #     f"{gene}_real": "tab:red",
-    #     f"{gene}_pseudo": "tab:green",
-    # }
+    label_to_color = {
+        "control": "tab:blue",
+        f"{gene}_real": "tab:red",
+        f"{gene}_pseudo": "tab:green",
+    }
 
-    # for lab in np.unique(labels):
-    #     mask = np.array(labels) == lab
-    #     ax.scatter(
-    #         X_umap[mask, 0],
-    #         X_umap[mask, 1],
-    #         s=10,
-    #         alpha=0.7,
-    #         label=lab,
-    #         c=label_to_color.get(lab, "gray"),
-    #     )
+    for lab in np.unique(labels):
+        mask = np.array(labels) == lab
+        ax.scatter(
+            X_umap[mask, 0],
+            X_umap[mask, 1],
+            s=10,
+            alpha=0.7,
+            label=lab,
+            c=label_to_color.get(lab, "gray"),
+        )
 
-    # ax.set_title(f"Zero-shot perturbation direction: {gene}")
-    # ax.set_xlabel("UMAP-1")
-    # ax.set_ylabel("UMAP-2")
-    # ax.legend(markerscale=2, fontsize=8, loc="best")
+    ax.set_title(f"Zero-shot perturbation direction: {gene}")
+    ax.set_xlabel("UMAP-1")
+    ax.set_ylabel("UMAP-2")
+    ax.legend(markerscale=2, fontsize=8, loc="best")
 
-    # os.makedirs(OUTPUT_DIR, exist_ok=True)
-    # out_path = os.path.join(OUTPUT_DIR, f"umap_zero_shot_{gene}.png")
-    # plt.tight_layout()
-    # plt.savefig(out_path, dpi=200)
-    # plt.close(fig)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    out_path = os.path.join(OUTPUT_DIR, f"umap_zero_shot_{gene}.png")
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=200)
+    plt.close(fig)
 
-    # print(f"[INFO] Saved UMAP plot for {gene} to: {out_path}")
+    print(f"[INFO] Saved UMAP plot for {gene} to: {out_path}")
 
 
     ##########################################################################
@@ -435,38 +437,38 @@ def zero_shot_test_for_gene(gene, embeddings, perturbations, max_cells_per_group
     # t-SNE on concatenated embeddings
     # -----------------------------
     # ---- PCA before t-SNE ----
-    print("[INFO] Running PCA for t-SNE preprocessing...")
-    pca = PCA(n_components=50)
-    X_pca = pca.fit_transform(X)
+    # print("[INFO] Running PCA for t-SNE preprocessing...")
+    # pca = PCA(n_components=50)
+    # X_pca = pca.fit_transform(X)
 
-    # ---- t-SNE ----
-    print("[INFO] Running t-SNE...")
-    tsne = TSNE(
-        n_components=2,
-        perplexity=30,
-        learning_rate="auto",
-        init="pca",
-        random_state=SEED
-    )
-    X_tsne = tsne.fit_transform(X_pca)
+    # # ---- t-SNE ----
+    # print("[INFO] Running t-SNE...")
+    # tsne = TSNE(
+    #     n_components=2,
+    #     perplexity=30,
+    #     learning_rate="auto",
+    #     init="pca",
+    #     random_state=SEED
+    # )
+    # X_tsne = tsne.fit_transform(X_pca)
 
-    # ---- Plot ----
-    fig, ax = plt.subplots(figsize=(8, 8))
-    for lab in np.unique(labels):
-        mask = np.array(labels) == lab
-        ax.scatter(
-            X_tsne[mask, 0],
-            X_tsne[mask, 1],
-            s=10,
-            alpha=0.7,
-            label=lab
-        )
-    ax.set_title(f"Zero-shot perturbation direction (t-SNE): {gene}")
-    ax.set_xlabel("t-SNE-1")
-    ax.set_ylabel("t-SNE-2")
-    ax.legend(markerscale=2, fontsize=8)
-    plt.tight_layout()
-    plt.savefig(os.path.join(OUTPUT_DIR, f"tSNE_zero_shot_{gene}.png"))
+    # # ---- Plot ----
+    # fig, ax = plt.subplots(figsize=(8, 8))
+    # for lab in np.unique(labels):
+    #     mask = np.array(labels) == lab
+    #     ax.scatter(
+    #         X_tsne[mask, 0],
+    #         X_tsne[mask, 1],
+    #         s=10,
+    #         alpha=0.7,
+    #         label=lab
+    #     )
+    # ax.set_title(f"Zero-shot perturbation direction (t-SNE): {gene}")
+    # ax.set_xlabel("t-SNE-1")
+    # ax.set_ylabel("t-SNE-2")
+    # ax.legend(markerscale=2, fontsize=8)
+    # plt.tight_layout()
+    # plt.savefig(os.path.join(OUTPUT_DIR, f"tSNE_zero_shot_{gene}.png"))
 
 
 
