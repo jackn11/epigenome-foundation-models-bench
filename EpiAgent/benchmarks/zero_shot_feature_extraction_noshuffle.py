@@ -133,7 +133,7 @@ if fig is not None:
         legend = ax.get_legend()
         if legend is not None:
             legend.set_title('Cell type')
-output_dir = Path(f'./zero_shot_feature_extraction_NMI_ARI_{args.dataset_name}')
+output_dir = Path(f'./zero_shot_feature_extraction_{args.dataset_name}')
 output_dir.mkdir(exist_ok=True)
 plt.savefig(output_dir / 'umap_cell_types_true_labels.png', dpi=300, bbox_inches='tight')
 plt.close(fig)
