@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 #%%
-# Load metrics
+# Load feature extraction benchmark results
 feature_extraction_datasets = ["Buenrostro2018", "Kanemaru2023", "Li2023b"]
 feature_extraction_result_csvs = {dataset:f"zero_shot_feature_extraction_{dataset}/results.csv" for dataset in feature_extraction_datasets}
 
@@ -17,6 +17,8 @@ for dataset, csv_path in feature_extraction_result_csvs.items():
     metrics_dict = dict(zip(df['Metric'], df['Value']))
     feature_extraction_results[dataset] = metrics_dict
 
+
+# Load perturbation benchmark results
 perturbation_datasets = ["Liscovitch_Brauer2021", "Pierce2021"]
 perturbation_cohens_d_paths = {dataset:f"zero_shot_perturbation_effect_prediction_{dataset}/model_score.txt" for dataset in perturbation_datasets}
 perturbation_plausibility_paths = {dataset:f"zero_shot_perturbation_effect_prediction_{dataset}/biological_plausibility_score.txt" for dataset in perturbation_datasets}
@@ -24,12 +26,12 @@ perturbation_results = {}
 for dataset, cohens_d_path in perturbation_cohens_d_paths.items():
     with open(cohens_d_path, 'r') as file:
         cohens_d = file.read().strip()
-        match = re.search(r"Weighted mean Cohen's d[^\d\-]*([-+]?\d*\.\d+|\d+)", cohens_d) # first floating point number after "Weighted mean Cohen's d"
+        match = re.search(r"Weighted mean Cohen's d[^\d\-]*([-+]?\d*\.\d+|\d+)", cohens_d) # first floating point number after the string "Weighted mean Cohen's d"
         cohens_d = float(match.group(1)) 
     with open(perturbation_plausibility_paths[dataset], 'r') as file:
         biological_plausibility = file.read().strip()
-        match = re.search(r"Spearman correlation[^\d\-]*([-+]?\d*\.\d+|\d+)", biological_plausibility)
-        biological_plausibility = -float(match.group(1)) 
+        match = re.search(r"Spearman correlation[^\d\-]*([-+]?\d*\.\d+|\d+)", biological_plausibility) # first floating point number after the string "Spearman correlation"
+        biological_plausibility = -float(match.group(1)) # more negative is better (but in our radar plot, we want to have more positive numbers be better, hence the negative sign)
     perturbation_results[dataset] = {
         "cohens_d": cohens_d,
         "biological_plausibility": biological_plausibility

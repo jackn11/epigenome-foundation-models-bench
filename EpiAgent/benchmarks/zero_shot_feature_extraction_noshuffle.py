@@ -16,7 +16,10 @@ import torch
 from epiagent.inference import infer_cell_embeddings
 import io
 from PIL import Image
-from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score, silhouette_samples
+from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score, silhouette_samples, accuracy_score, f1_score
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from tqdm import tqdm
 import matplotlib.pyplot as plt
 from scib.metrics import silhouette, silhouette_batch
 import pandas as pd
@@ -99,7 +102,7 @@ embedding_save_path = f'./saved_embeddings/{args.dataset_name}/{args.dataset_nam
 if os.path.exists(embedding_save_path):
     print(f"Loading saved cell embeddings from {embedding_save_path}...")
     cell_embeddings = np.load(embedding_save_path)
-    print("Saved cell embeddings loaded successfully.")
+    print("Cell embeddings loaded successfully.")
 else:
     print("No saved embeddings found. Computing from scratch...")
     print("Loading the pretrained model...")
@@ -186,19 +189,113 @@ cell_types = adata_tfidf.obs['cell_type'].values
 silhouette_samples_scores = silhouette_samples(cell_embeddings, cell_types)
 mean_silhouette_per_group = pd.Series(silhouette_samples_scores, index=cell_types).groupby(cell_types).mean().mean()
 
-# Print the results
+# Train linear probe on cell embeddings using cell type labels
+print("Training linear probe on embeddings...")
+cell_types = adata_tfidf.obs['cell_type'].values
+
+X_train, X_val, y_train, y_val = train_test_split(
+    cell_embeddings,
+    cell_types,
+    test_size=0.2,
+    stratify=cell_types,
+    random_state=SEED
+)
+
+print(f"Training on {len(X_train)} samples, validating on {len(X_val)} samples...")
+linear_probe = LogisticRegression(
+    max_iter=1000,
+    random_state=SEED,
+    multi_class='multinomial',
+    solver='lbfgs',
+    verbose=1  # Show convergence progress (prints iteration info)
+)
+with tqdm(desc="Training linear probe", total=100, ncols=80) as pbar:
+    linear_probe.fit(X_train, y_train)
+    pbar.update(100)
+y_val_pred = linear_probe.predict(X_val)
+linear_probe_accuracy = accuracy_score(y_val, y_val_pred)
+linear_probe_f1_macro = f1_score(y_val, y_val_pred, average='macro')
+linear_probe_f1_weighted = f1_score(y_val, y_val_pred, average='weighted')
+
+print(f"Linear probe accuracy: {linear_probe_accuracy:.4f}")
+print(f"Linear probe F1 score (macro): {linear_probe_f1_macro:.4f}")
+print(f"Linear probe F1 score (weighted): {linear_probe_f1_weighted:.4f}")
+
+
+# Train linear probe on embeddings using batch labels
+print("\nTraining linear probe on embeddings (batch labels)...")
+batch_labels = adata_tfidf.obs[args.batch_key].values
+X_train_batch, X_val_batch, y_train_batch, y_val_batch = train_test_split(
+    cell_embeddings,
+    batch_labels,
+    test_size=0.2,
+    stratify=batch_labels,
+    random_state=SEED
+)
+
+print(f"Training on {len(X_train_batch)} samples, validating on {len(X_val_batch)} samples...")
+linear_probe_batch = LogisticRegression(
+    max_iter=1000,
+    random_state=SEED,
+    multi_class='multinomial',
+    solver='lbfgs',
+    verbose=1  # Show convergence progress (prints iteration info)
+)
+# Use tqdm to show training is in progress
+with tqdm(desc="Training linear probe (batch)", total=100, ncols=80) as pbar:
+    linear_probe_batch.fit(X_train_batch, y_train_batch)
+    pbar.update(100)  # Complete the progress bar when done
+
+# Evaluate on validation set
+y_val_pred_batch = linear_probe_batch.predict(X_val_batch)
+linear_probe_batch_accuracy = accuracy_score(y_val_batch, y_val_pred_batch)
+linear_probe_batch_f1_macro = f1_score(y_val_batch, y_val_pred_batch, average='macro')
+linear_probe_batch_f1_weighted = f1_score(y_val_batch, y_val_pred_batch, average='weighted')
+
+print(f"Linear probe accuracy (batch): {linear_probe_batch_accuracy:.4f}")
+print(f"Linear probe F1 score (macro, batch): {linear_probe_batch_f1_macro:.4f}")
+print(f"Linear probe F1 score (weighted, batch): {linear_probe_batch_f1_weighted:.4f}")
+
+
 print(f"Adjusted Rand Index (ARI): {ari_score:.4f}")
 print(f"Normalized Mutual Information (NMI): {nmi_score:.4f}")
 print(f"Silhouette score: {silhouette_score:.4f}")
 print(f"Silhouette batch score: {silhouette_batch_score:.4f}")
 print(f"Mean silhouette per group: {mean_silhouette_per_group:.4f}")
+print(f"Linear probe accuracy: {linear_probe_accuracy:.4f}")
+print(f"Linear probe F1 score (macro): {linear_probe_f1_macro:.4f}")
+print(f"Linear probe F1 score (weighted): {linear_probe_f1_weighted:.4f}")
 print(f"\nNumber of true cell types: {len(adata_tfidf.obs['cell_type'].unique())}")
 print(f"Number of predicted clusters: {len(adata_tfidf.obs['leiden'].unique())}")
 
 # Save results to CSV
 results_df = pd.DataFrame({
-    'Metric': ['Adjusted Rand Index', 'Normalized Mutual Information', 'Silhouette score', 'Silhouette batch score', 'Mean silhouette per group'],
-    'Value': [ari_score, nmi_score, silhouette_score, silhouette_batch_score, mean_silhouette_per_group]
+    'Metric': [
+        'Adjusted Rand Index', 
+        'Normalized Mutual Information', 
+        'Silhouette score', 
+        'Silhouette batch score', 
+        'Mean silhouette per group',
+        'Cell type Linear probe accuracy',
+        'Cell type Linear probe F1 score (macro)',
+        'Cell type Linear probe F1 score (weighted)',
+        'Batch label Linear probe accuracy',
+        'Batch label Linear probe F1 score (macro)',
+        'Batch label Linear probe F1 score (weighted)'
+    ],
+    'Value': [
+        ari_score, 
+        nmi_score, 
+        silhouette_score, 
+        silhouette_batch_score, 
+        mean_silhouette_per_group,
+        linear_probe_accuracy,
+        linear_probe_f1_macro,
+        linear_probe_f1_weighted,
+        linear_probe_batch_accuracy,
+        linear_probe_batch_f1_macro,
+        linear_probe_batch_f1_weighted,
+    ]
 })
 results_file = output_dir / 'results.csv'
 results_df.to_csv(results_file, index=False)
