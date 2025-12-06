@@ -2,6 +2,7 @@
 import os
 import re
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
 import pandas as pd
@@ -66,7 +67,19 @@ for dataset in feature_extraction_datasets:
 silhouette_batch_values = np.array(silhouette_batch_values)
 silhouette_batch = silhouette_batch_values.mean()
 
-print(nmi, ari, silhouette, silhouette_batch)
+cell_type_linear_probe_f1_values = []
+for dataset in feature_extraction_datasets:
+    cell_type_linear_probe_f1_values.append(feature_extraction_results[dataset]['Cell type Linear probe F1 score (macro)'])
+cell_type_linear_probe_f1_values = np.array(cell_type_linear_probe_f1_values)
+cell_type_linear_probe_f1 = cell_type_linear_probe_f1_values.mean()
+
+batch_linear_probe_f1_values = []
+for dataset in feature_extraction_datasets:
+    batch_linear_probe_f1_values.append(feature_extraction_results[dataset]['Batch label Linear probe F1 score (macro)'])
+batch_linear_probe_f1_values = np.array(batch_linear_probe_f1_values)
+batch_linear_probe_f1 = batch_linear_probe_f1_values.mean()
+
+print(nmi, ari, silhouette, silhouette_batch, cell_type_linear_probe_f1, batch_linear_probe_f1)
 
 #aggregate perturbation metrics (Cohen's D, Biological Plausibility)
 cohens_d_values = []
@@ -89,14 +102,16 @@ labels = [
     "ARI",
     "Silhouette",
     "Silhouette_batch",
+    "Cell type\n linear probe F1",
+    "Batch label\n linear probe F1",
     "Perturbation Effect Captured",
     "Perturbation Effect\n Biological Plausibility",
 ]
 
-values = np.array([nmi, ari, silhouette, silhouette_batch, cohens_d, biological_plausibility])
+values = np.array([nmi, ari, silhouette, silhouette_batch, cell_type_linear_probe_f1, 1-batch_linear_probe_f1, cohens_d, biological_plausibility])
 print("values: ", values)
-mins   = np.array([0, 0, 0, 0, 0, 0])
-maxs   = np.array([1, 1, 1, 1, 0.4, 0.4])
+mins   = np.array([0, 0, 0, 0, 0, 0, 0, 0])
+maxs   = np.array([1, 1, 1, 1, 1, 0.5, 0.2, 0.4])
 
 # 2. Normalize into [0, 1]
 norm = (values - mins) / (maxs - mins)
@@ -120,6 +135,20 @@ ax.yaxis.set_tick_params(labelleft=False, labelright=False)
 
 ax.plot(angles, norm, marker='o')
 ax.fill(angles, norm, alpha=0.25)
+
+# Add value annotations beside each point
+# Use original values (before closing the loop) for display
+values_for_display = np.array([nmi, ari, silhouette, silhouette_batch, cell_type_linear_probe_f1, 1-batch_linear_probe_f1, cohens_d, biological_plausibility])
+angles_for_display = angles[:-1]  # Exclude the last angle (duplicate for closing the loop)
+norm_for_display = norm[:-1]  # Exclude the last normalized value
+
+for angle, norm_val, orig_val in zip(angles_for_display, norm_for_display, values_for_display):
+    text_radius = norm_val + 0.1
+    if text_radius > 1.0:
+        text_radius = norm_val - 0.05
+    ax.text(angle, text_radius, f'{orig_val:.3f}', 
+            ha='center', va='center', fontsize=9, 
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7, edgecolor='none'))
 
 # Use your text labels instead of degree numbers
 ax.set_xticks(angles)
