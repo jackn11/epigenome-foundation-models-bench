@@ -31,3 +31,5 @@ EpiAgent/demo/**/*.csv
 EpiAgent/demo/**/*.h5ad
 EpiAgent/demo/*/
 EpiAgent/benchmarks/figures/*
+
+EpiAgent/benchmarks/*/

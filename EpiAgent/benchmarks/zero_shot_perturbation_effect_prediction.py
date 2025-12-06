@@ -1,6 +1,7 @@
 import os
 import json
 import random
+import argparse
 import numpy as np
 import pandas as pd
 import torch
@@ -11,28 +12,8 @@ from tqdm import tqdm
 from sklearn.neighbors import NearestNeighbors
 import hdbscan
 
-# ============================================================
-# 1. Configuration
-# ============================================================
-
-PRETRAINED_MODEL_PATH = (
-    "/scratch/wkim/project-2-team-1/EpiAgent/model/pretrained_EpiAgent.pth"
-)
-
-# CSV_PATH = "/scratch/wkim/project-2-team-1/EpiAgent/data/sample/genetic_perturbation_data/All_data_K562_1.csv"
-# GENES_OF_INTEREST = ["CHD5", "KDM6A", "DNMT3A", "HDAC9", "PBRM1", "MBD1", "PRDM9", "ING1", "EZH2", "TET2", "ARID1A", "SETD2", "HIST1H3B", "PHF6", "ATRX", "H3F3B", "SMARCB1", "SMARCA4", "CHD8", "H3F3A", "CHD4"]
-
-CSV_PATH = (
-    "/scratch/wkim/project-2-team-1/EpiAgent/external_data/"
-    "GSE168851_crispr_perturb/All_data_SpearATAC_K562_LargeScreen.csv"
-)
-# GENES_OF_INTEREST = ["sgGATA1", "sgMAX", "sgYY1"]
-GENES_OF_INTEREST = ['UNK', 'sgARID2', 'sgARID3A', 'sgATF1', 'sgATF3', 'sgBCLAF1', 'sgBRF2', 'sgCAD',
- 'sgCDC5L', 'sgCEBPB', 'sgCEBPZ', 'sgCTCF', 'sgCUX1', 'sgELF1', 'sgFOSL1',
- 'sgGABPA', 'sgGATA1', 'sgGTF2B', 'sgHINFP', 'sgHSPA5', 'sgKLF1', 'sgKLF16',
- 'sgMAX', 'sgMYC', 'sgNFE2', 'sgNFYB', 'sgNRF1', 'sgPBX2', 'sgPOLR1D', 'sgREST',
- 'sgRPL9', 'sgSETDB1', 'sgTBP', 'sgTFDP1', 'sgTHAP1', 'sgTRIM28', 'sgYY1',
- 'sgZBTB11', 'sgZNF280A', 'sgZNF407', 'sgZZZ3', 'sgsgNT']
+from epiagent.model import EpiAgent
+from epiagent.dataset import CellDataset, collate_fn
 
 CONTROL_LABEL = "control"        # we already remapped sgsgNT -> control
 UNK_LABEL = "UNK"                # will be dropped
@@ -45,38 +26,26 @@ NUM_HEADS = 8
 
 K_NEIGHBORS = 20                # k for local neighborhood
 MIN_GENE_CELLS = 30             # skip genes with fewer cells
+
 SEED = 42
-
-# OUTPUT_DIR = "./local_neighborhood_deviation_K562"
-OUTPUT_DIR = "./local_neighborhood_deviation_GSE168851"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-# Cache paths for embeddings
-# CACHE_DIR = "./epiagent_embedding_cache_K562"
-CACHE_DIR = "./epiagent_embedding_cache_GSE168851"
-os.makedirs(CACHE_DIR, exist_ok=True)
-EMBEDDING_CACHE_PATH = os.path.join(CACHE_DIR, "cell_embeddings.npy")
-PERTURBATION_CACHE_PATH = os.path.join(CACHE_DIR, "perturbations.npy")
-
-# ============================================================
-# 2. Reproducibility
-# ============================================================
-
 random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 torch.cuda.manual_seed_all(SEED)
 
-# ============================================================
-# 3. Import EpiAgent / dataset
-# ============================================================
+def get_args_parser():
+    parser = argparse.ArgumentParser('Zero-shot perturbation effect prediction', add_help=False)
+    parser.add_argument('--csv_path',
+                        default='/scratch/wkim/project-2-team-1/EpiAgent/external_data/GSE168851_crispr_perturb/All_data_SpearATAC_K562_LargeScreen.csv', type=str)
+    parser.add_argument('--genes_of_interest',
+                        default=['sgGATA1', 'sgMAX', 'sgYY1'],
+                        nargs='+',
+                        type=str,)
+    parser.add_argument('--output_dir', default='./zeroshot_perturbation_effect_prediction_CohensD_outputs', type=str)
+    parser.add_argument('--cache_dir', default='/path/to/embeddings/cache', type=str)
+    parser.add_argument('--pretrained_model_path', default='/scratch/wkim/project-2-team-1/EpiAgent/model/pretrained_EpiAgent.pth', type=str)
+    return parser
 
-from epiagent.model import EpiAgent
-from epiagent.dataset import CellDataset, collate_fn
-
-# ============================================================
-# 4. Load metadata + cell_indices
-# ============================================================
 
 def load_metadata_and_cell_indices(csv_path):
     print(f"[INFO] Loading CSV from {csv_path}")
@@ -95,11 +64,7 @@ def load_metadata_and_cell_indices(csv_path):
     print(f"[INFO] Unique perturbations: {np.unique(perturbations)}")
     return cell_indices_list, perturbations
 
-# ============================================================
-# 5. Build EpiAgent and compute embeddings
-# ============================================================
-
-def build_epigagent_and_embed(cell_indices_list, device="cuda"):
+def build_epigagent_and_embed(args, cell_indices_list, device="cuda"):
     print("[INFO] Initializing EpiAgent...")
     model = EpiAgent(
         vocab_size=VOCAB_SIZE,
@@ -112,8 +77,8 @@ def build_epigagent_and_embed(cell_indices_list, device="cuda"):
         pos_weight_for_CCA=torch.tensor(1.0),
     )
 
-    print(f"[INFO] Loading pretrained weights from {PRETRAINED_MODEL_PATH}")
-    state_dict = torch.load(PRETRAINED_MODEL_PATH, map_location="cpu")
+    print(f"[INFO] Loading pretrained weights from {args.pretrained_model_path}")
+    state_dict = torch.load(args.pretrained_model_path, map_location="cpu")
     model.load_state_dict(state_dict)
 
     device = torch.device(device if torch.cuda.is_available() else "cpu")
@@ -143,7 +108,7 @@ def build_epigagent_and_embed(cell_indices_list, device="cuda"):
     print(f"[INFO] Embeddings shape: {embeddings.shape}")
     return embeddings
 
-def get_or_compute_embeddings(cell_indices_list, perturbations, device="cuda"):
+def get_or_compute_embeddings(args, cell_indices_list, perturbations, device="cuda"):
     """
     If cached embeddings exist, load and return them.
     Otherwise, compute embeddings with EpiAgent, save to disk, and return.
@@ -152,10 +117,12 @@ def get_or_compute_embeddings(cell_indices_list, perturbations, device="cuda"):
     compared to the forward pass, so we rerun it each time.
     """
     # If cache exists, load and sanity-check shapes
-    if os.path.exists(EMBEDDING_CACHE_PATH) and os.path.exists(PERTURBATION_CACHE_PATH):
-        print(f"[INFO] Loading cached embeddings from {EMBEDDING_CACHE_PATH}")
-        cached_embeddings = np.load(EMBEDDING_CACHE_PATH)
-        cached_perts = np.load(PERTURBATION_CACHE_PATH, allow_pickle=True)
+    embedding_cache_path = os.path.join(args.cache_dir, "cell_embeddings.npy")
+    perturbation_cache_path = os.path.join(args.cache_dir, "perturbations.npy")
+    if os.path.exists(embedding_cache_path) and os.path.exists(perturbation_cache_path):
+        print(f"[INFO] Loading cached embeddings from {embedding_cache_path}")
+        cached_embeddings = np.load(embedding_cache_path)
+        cached_perts = np.load(perturbation_cache_path, allow_pickle=True)
 
         if cached_embeddings.shape[0] != len(perturbations):
             print("[WARN] Cached embeddings shape does not match current "
@@ -169,19 +136,15 @@ def get_or_compute_embeddings(cell_indices_list, perturbations, device="cuda"):
 
     # Otherwise compute from scratch
     print("[INFO] No valid cache found; computing embeddings with EpiAgent...")
-    embeddings = build_epigagent_and_embed(cell_indices_list, device=device)
+    embeddings = build_epigagent_and_embed(args, cell_indices_list, device=device)
 
     # Save cache
-    np.save(EMBEDDING_CACHE_PATH, embeddings)
-    np.save(PERTURBATION_CACHE_PATH, np.asarray(perturbations, dtype=str))
-    print(f"[INFO] Saved embeddings cache to {EMBEDDING_CACHE_PATH}")
-    print(f"[INFO] Saved perturbation labels cache to {PERTURBATION_CACHE_PATH}")
+    np.save(embedding_cache_path, embeddings)
+    np.save(perturbation_cache_path, np.asarray(perturbations, dtype=str))
+    print(f"[INFO] Saved embeddings cache to {embedding_cache_path}")
+    print(f"[INFO] Saved perturbation labels cache to {perturbation_cache_path}")
 
     return embeddings, perturbations
-
-# ============================================================
-# 6. HDBSCAN filtering to main "ball"
-# ============================================================
 
 def hdbscan_filter_main_cluster(embeddings, perturbations):
     """
@@ -217,10 +180,6 @@ def hdbscan_filter_main_cluster(embeddings, perturbations):
     print(f"[INFO] Keeping cluster {main_label}: {emb_filt.shape[0]} / {embeddings.shape[0]} cells")
     print(f"[INFO] Unique perturbations after filtering: {np.unique(pert_filt)}")
     return emb_filt, pert_filt
-
-# ============================================================
-# 7. Local neighborhood deviation metric (Option A)
-# ============================================================
 
 def compute_local_knn_dists(embeddings, perturbations, gene, k_neighbors=20):
     """
@@ -325,44 +284,6 @@ def summarize_and_plot_local_deviation(
     fig.savefig(out_path, dpi=200)
     plt.close(fig)
 
-    # ---- per-gene violin plot: control vs gene ----
-    fig_v, ax_v = plt.subplots(figsize=(5, 4))
-
-    # two groups: baseline (control↔control) and gene↔control
-    data_violin = [baseline_dists, gene_dists]
-
-    parts = ax_v.violinplot(
-        data_violin,
-        positions=[1, 2],
-        showmeans=True,
-        showextrema=True,
-        showmedians=False,
-    )
-
-    # Optional: slightly different facecolors
-    for i, pc in enumerate(parts['bodies']):
-        if i == 0:
-            pc.set_facecolor("lightblue")
-        else:
-            pc.set_facecolor("lightcoral")
-        pc.set_alpha(0.7)
-
-    ax_v.set_xticks([1, 2])
-    ax_v.set_xticklabels(
-        [f"control (n={n_ctrl})", f"{gene} (n={n_gene})"],
-        rotation=20,
-        ha="right",
-        fontsize=9,
-    )
-    ax_v.set_ylabel(f"Mean distance to {K_NEIGHBORS} nearest controls (L2)")
-    ax_v.set_title(f"Local k-NN distances: control vs {gene}")
-
-    fig_v.tight_layout()
-    violin_path = os.path.join(out_dir, f"local_knn_violin_{gene}.png")
-    fig_v.savefig(violin_path, dpi=200)
-    plt.close(fig_v)
-
-
     metrics = {
         "gene": gene,
         "n_ctrl": n_ctrl,
@@ -376,17 +297,13 @@ def summarize_and_plot_local_deviation(
     return metrics
 
 
-# ============================================================
-# 8. Main
-# ============================================================
-
-def main():
+def main(args):
     # 1) Load metadata
-    cell_indices_list, perturbations = load_metadata_and_cell_indices(CSV_PATH)
+    cell_indices_list, perturbations = load_metadata_and_cell_indices(args.csv_path)
 
     # 2) Get or compute EpiAgent embeddings (with caching)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    embeddings, perturbations = get_or_compute_embeddings(cell_indices_list, perturbations, device=device)
+    embeddings, perturbations = get_or_compute_embeddings(args, cell_indices_list, perturbations, device=device)
 
     # 3) HDBSCAN filter to main cluster
     # embeddings, perturbations = hdbscan_filter_main_cluster(embeddings, perturbations)
@@ -397,7 +314,7 @@ def main():
     unique_perts = np.unique(perturbations)
     print(f"[INFO] Unique perturbations after filter: {unique_perts}")
 
-    for gene in GENES_OF_INTEREST:
+    for gene in args.genes_of_interest:
         if gene not in unique_perts:
             print(f"[WARN] {gene} not found after filtering; skipping.")
             continue
@@ -409,14 +326,14 @@ def main():
             continue
 
         metrics = summarize_and_plot_local_deviation(
-            gene, baseline_dists, gene_dists, n_ctrl, n_gene, OUTPUT_DIR
+            gene, baseline_dists, gene_dists, n_ctrl, n_gene, args.output_dir
         )
         all_metrics.append(metrics)
 
     # 5) Save metrics table
     if all_metrics:
         df_metrics = pd.DataFrame(all_metrics)
-        csv_path = os.path.join(OUTPUT_DIR, "local_neighborhood_metrics.csv")
+        csv_path = os.path.join(args.output_dir, "local_neighborhood_metrics.csv")
         df_metrics.to_csv(csv_path, index=False)
         print(f"[INFO] Saved metrics table to {csv_path}")
 
@@ -426,7 +343,7 @@ def main():
         
         print(f"[MODEL SCORE] Weighted mean Cohen's d across genes = {weighted_mean_d:.4f}")
         
-        with open(os.path.join(OUTPUT_DIR, "model_score.txt"), "w") as f:
+        with open(os.path.join(args.output_dir, "model_score.txt"), "w") as f:
             f.write(f"Weighted mean Cohen's d = {weighted_mean_d:.6f}\n")
 
         
@@ -467,7 +384,7 @@ def main():
 
         print(f"[BIO SCORE] Spearman correlation between tier and Cohen's d = {rho:.4f} (p={pval:.3g})")
 
-        with open(os.path.join(OUTPUT_DIR, "biological_plausibility_score.txt"), "w") as f:
+        with open(os.path.join(args.output_dir, "biological_plausibility_score.txt"), "w") as f:
             f.write(f"Spearman correlation = {rho:.6f}, p={pval:.6g}\n")
 
 
@@ -499,7 +416,7 @@ def main():
         ax.grid(axis='y', alpha=0.3, linestyle='--')
         
         fig.tight_layout()
-        bar_plot_path = os.path.join(OUTPUT_DIR, "cohens_d_barplot_all_genes.png")
+        bar_plot_path = os.path.join(args.output_dir, "cohens_d_barplot_all_genes.png")
         fig.savefig(bar_plot_path, dpi=200, bbox_inches='tight')
         plt.close(fig)
         print(f"[INFO] Saved bar plot to {bar_plot_path}")
@@ -508,4 +425,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    args = get_args_parser().parse_args()
+    os.makedirs(args.output_dir, exist_ok=True)
+    os.makedirs(args.cache_dir, exist_ok=True)
+    main(args)
