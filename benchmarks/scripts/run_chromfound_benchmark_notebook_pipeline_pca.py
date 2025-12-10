@@ -33,8 +33,24 @@ import wandb
 
 def get_args_parser():
     parser = argparse.ArgumentParser('ChromFound Benchmarking Script')
-    parser.add_argument('--dataset_name', type=str, default='Kanemaru2023_downsampled')
-    parser.add_argument('--dataset_path', type=str, default='/scratch/wkim/project-2-team-1/ChromFound-Parallel/results-copy/chromfound/Kanemaru2023_downsampled/merge10/Kanemaru2023_downsampled_10000_cells_preprocessed_merge10.h5ad')
+    # starting from step 2 (no preprocessing)
+    # parser.add_argument('--dataset_name', type=str, default='Kanemaru2023_downsampled')
+    # parser.add_argument('--dataset_path', type=str, default='/scratch/wkim/project-2-team-1/ChromFound-Parallel/results-copy/chromfound/Kanemaru2023_downsampled/merge10/Kanemaru2023_downsampled_10000_cells_preprocessed_merge10.h5ad')
+    # parser.add_argument('--project_root', type=str, default='/scratch/wkim/project-2-team-1/')
+    
+    # starting from step 1 (preprocessing)
+    # parser.add_argument('--dataset_name', type=str, default='buenrostro2018_example')
+    # parser.add_argument('--dataset_path', type=str, default='/scratch/naimer/github/project-2-team-1/EpiAgent/data/Buenrostro2018/Buenrostro2018-bone_marrow_tissue/Buenrostro2018-bone_marrow_tissue-cell_by_cCRE.h5ad')
+    # parser.add_argument('--project_root', type=str, default='/scratch/wkim/project-2-team-1/')
+
+    # starting from step 1 (preprocessing)
+    # parser.add_argument('--dataset_name', type=str, default='Pierce2021')
+    # parser.add_argument('--dataset_path', type=str, default='/scratch/wkim/project-2-team-1/ChromFound-Parallel/external_data/GSE168851_crispr_perturb/K562_SpearATAC_for_chromfound.h5ad')
+    # parser.add_argument('--project_root', type=str, default='/scratch/wkim/project-2-team-1/')
+
+    # starting from step 2 (no preprocessing)
+    parser.add_argument('--dataset_name', type=str, default='Pierce2021')
+    parser.add_argument('--dataset_path', type=str, default='/scratch/wkim/project-2-team-1/benchmarks/results/chromfound/Pierce2021/merge10/Pierce2021_preprocessed_merge10.h5ad')
     parser.add_argument('--project_root', type=str, default='/scratch/wkim/project-2-team-1/')
     return parser
 
