@@ -29,8 +29,8 @@ if 'X_pca' in adata.obsm:
     print(f"Embeddings dtype: {embeddings.dtype}")
     print(f"Embeddings min: {embeddings.min():.4f}, max: {embeddings.max():.4f}")
     print(f"Embeddings mean: {embeddings.mean():.4f}, std: {embeddings.std():.4f}")
-    print(f"\nFirst 5 rows of embeddings:")
-    print(embeddings[:5])
+    # print(f"\nFirst 5 rows of embeddings:")
+    # print(embeddings[:5])
 else:
     print("No 'X_pca' found in adata.obsm")
     print(f"Available keys in obsm: {list(adata.obsm.keys())}")
@@ -40,31 +40,33 @@ print("\n" + "="*80)
 print("LABELS / OBSERVATIONS")
 print("="*80)
 print(f"Observation columns: {list(adata.obs.columns)}")
-print(f"\nFirst few rows of observations:")
-print(adata.obs.head())
+# print(f"\nFirst few rows of observations:")
+# print(adata.obs.head())
 
 # Check for cell type column
 if 'celltype' in adata.obs.columns:
-    print(f"\nCell types (unique): {adata.obs['celltype'].nunique()}")
+    print('\ncelltype found')
+    print(f"Cell types (unique): {adata.obs['celltype'].nunique()}")
     print(f"Cell type distribution:")
     print(adata.obs['celltype'].value_counts())
 elif 'cell_type' in adata.obs.columns:
-    print(f"\nCell types (unique): {adata.obs['cell_type'].nunique()}")
+    print('\ncell_type found')
+    print(f"Cell types (unique): {adata.obs['cell_type'].nunique()}")
     print(f"Cell type distribution:")
     print(adata.obs['cell_type'].value_counts())
 
 # Check for PCA metadata
-print("\n" + "="*80)
-print("PCA METADATA")
-print("="*80)
-if 'pca' in adata.uns:
-    pca_info = adata.uns['pca']
-    print(f"PCA information: {pca_info}")
-    if 'variance_ratio' in pca_info:
-        print(f"Explained variance ratio (sum): {pca_info['variance_ratio'].sum():.4f}")
-        print(f"Number of components: {pca_info.get('n_components', 'N/A')}")
-else:
-    print("No PCA metadata found in adata.uns")
+# print("\n" + "="*80)
+# print("PCA METADATA")
+# print("="*80)
+# if 'pca' in adata.uns:
+#     pca_info = adata.uns['pca']
+    # print(f"PCA information: {pca_info}")
+    # if 'variance_ratio' in pca_info:
+    #     print(f"Explained variance ratio (sum): {pca_info['variance_ratio'].sum():.4f}")
+    #     print(f"Number of components: {pca_info.get('n_components', 'N/A')}")
+# else:
+#     print("No PCA metadata found in adata.uns")
 
 # Summary
 print("\n" + "="*80)
