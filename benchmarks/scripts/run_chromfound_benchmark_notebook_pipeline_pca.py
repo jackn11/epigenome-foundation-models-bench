@@ -412,9 +412,10 @@ def cluster_and_evaluate(paths, num_cell_merge=1):
     silhouette_score = silhouette(adata_emb, label_key=cell_type_col, embed='X_pca')
     
     # Calculate batch silhouette if batch column exists
+    # Check if any column name (lowercased) contains "batch"
     batch_key = None
-    for col in ['batch', 'Batch', 'sample', 'Sample']:
-        if col in adata_emb.obs.columns:
+    for col in adata_emb.obs.columns:
+        if 'batch' in col.lower():
             batch_key = col
             break
     
@@ -543,7 +544,7 @@ def main():
             "num_cell_merge": num_cell_merge,
             "gpu_device": gpu_device,
             "dataset": dataset_name,
-            "batch_size": 1,
+            "batch_size": 2,
             "n_pcs": 50,
         }
     )
@@ -559,7 +560,7 @@ def main():
         "pretrain_checkpoint_path": str(_chromfound_path / "src" / "checkpoints"),
         "pretrain_model_name": "model.pt",
         "pretrain_config_file": "chromfd_pretrain.yaml",
-        "batch_size": 1,  # Reduced batch size for memory
+        "batch_size": 2,
         "device": gpu_device,
         "n_pca_components": 50,  # Memory-efficient: save only 50-dim PCA instead of 1.3M-dim
         "n_samples_for_pca": 1000,  # Fit PCA on 1000 random cells (FAST), then project all
