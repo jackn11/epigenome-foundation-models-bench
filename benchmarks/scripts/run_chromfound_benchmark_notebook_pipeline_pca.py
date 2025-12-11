@@ -57,6 +57,7 @@ def get_args_parser():
     parser.add_argument('--dataset_name', type=str, default='Liscovitch_Brauer2021')
     parser.add_argument('--dataset_path', type=str, default='/scratch/wkim/project-2-team-1/ChromFound-Parallel/data/sample/genetic_perturbation_data/Liscovitch_Brauer2021/Liscovitch_Brauer2021_for_chromfound.h5ad')
     parser.add_argument('--project_root', type=str, default='/scratch/wkim/project-2-team-1/')
+    parser.add_argument('--n_cells_target', type=int, default=None, help='Number of cells to downsample to. If None (default), no downsampling is performed.')
     return parser
 
 # Conversion function is defined below
@@ -194,7 +195,7 @@ def setup_paths(args, num_cell_merge=1):
     return paths
 
 
-def preprocess_data(paths, data_args):
+def preprocess_data(paths, data_args, n_cells_target=None):
     """
     Preprocess the data: convert cCREs to genomic coordinates, verify columns.
     
@@ -216,6 +217,17 @@ def preprocess_data(paths, data_args):
     print(f"Loading data from: {paths['input_data']}")
     adata = sc.read_h5ad(paths['input_data'])
     print(f"Original shape: {adata.shape}")
+
+    # Downsample if n_cells_target is specified and dataset is larger
+    if n_cells_target is not None and adata.n_obs > n_cells_target:
+        print(f"\nDownsampling from {adata.n_obs:,} to {n_cells_target:,} cells...")
+        # Use scanpy's subsample function which preserves cell type proportions
+        sc.pp.subsample(adata, n_obs=n_cells_target, random_state=42)
+        print(f"After downsampling: {adata.shape}")
+    elif n_cells_target is not None:
+        print(f"\nDataset has {adata.n_obs:,} cells (≤ {n_cells_target:,}), skipping downsampling")
+    else:
+        print(f"\nNo downsampling requested (n_cells_target=None), using all {adata.n_obs:,} cells")
     
     # Convert cCRE identifiers to genomic coordinates (idempotent)
     print("\nConverting cCRE identifiers to genomic coordinates...")
@@ -443,9 +455,10 @@ def cluster_and_evaluate(paths, num_cell_merge=1):
     silhouette_score = silhouette(adata_emb, label_key=cell_type_col, embed='X_pca')
     
     # Calculate batch silhouette if batch column exists
+    # Check if any column name (lowercased) contains "batch"
     batch_key = None
-    for col in ['batch', 'Batch', 'sample', 'Sample']:
-        if col in adata_emb.obs.columns:
+    for col in adata_emb.obs.columns:
+        if 'batch' in col.lower():
             batch_key = col
             break
     
@@ -590,7 +603,7 @@ def main(args):
         "pretrain_checkpoint_path": str(_chromfound_path / "src" / "checkpoints"),
         "pretrain_model_name": "model.pt",
         "pretrain_config_file": "chromfd_pretrain.yaml",
-        "batch_size": 1,  # Reduced batch size for memory
+        "batch_size": 2,
         "device": gpu_device,
         "n_pca_components": 50,  # Memory-efficient: save only 50-dim PCA instead of 1.3M-dim
         "n_samples_for_pca": 1000,  # Fit PCA on 1000 random cells (FAST), then project all
@@ -617,7 +630,7 @@ def main(args):
             print(f"\nUsing batch_size={inference_config['batch_size']}")
         else:
             # Step 1: Preprocess
-            preprocess_data(paths, data_args)
+            preprocess_data(paths, data_args, n_cells_target=args.n_cells_target)
             print(f"\nUsing batch_size={inference_config['batch_size']}")
         
         # Step 2: Run inference (COMMENTED OUT - embeddings already generated)
