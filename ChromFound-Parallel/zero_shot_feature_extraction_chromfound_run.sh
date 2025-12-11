@@ -1,0 +1,3 @@
+# python zero_shot_feature_extraction_chromfound.py --dataset_name Kanemaru2023_downsampled
+# python zero_shot_feature_extraction_chromfound.py --dataset_name Buenrostro2018-bone_marrow_tissue
+python zero_shot_feature_extraction_chromfound.py --dataset_name Li2023b_downsampled

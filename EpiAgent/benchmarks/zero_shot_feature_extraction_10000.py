@@ -35,7 +35,7 @@ if torch.cuda.is_available():
 
 def get_args_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_name', type=str, default='Li2023b')
+    parser.add_argument('--dataset_name', type=str, default='Li2023b', choices=['Kanemaru2023', 'Li2023b'])
     parser.add_argument('--batch_key', type=str, default='Batch (HSC)')
     parser.add_argument('--root', type=str, default='/scratch/naimer/github/project-2-team-1/EpiAgent/data')
     parser.add_argument('--seed', type=int, default=42)
@@ -45,21 +45,58 @@ def get_args_parser():
 parser = get_args_parser()
 args = parser.parse_args()
 
-# dataset_name = 'Li2023b'
-# batch_key = 'Batch (HSC)'
 root = Path(args.root)
 
 print("Loading the dataset...")
 if args.dataset_name == 'Li2023b':
-    input_path = root / 'Li2023b' / 'Li2023b-brain_tissue' / 'Li2023b-brain_tissue-cell_by_cCRE.h5ad'
-elif args.dataset_name == 'Buenrostro2018':
-    input_path = root / 'Buenrostro2018' / 'Buenrostro2018-bone_marrow_tissue' / 'Buenrostro2018-bone_marrow_tissue-cell_by_cCRE.h5ad'
+    input_path = root / 'sample' / 'raw_h5ad' / 'Li2023b_downsampled_10000_cells.h5ad'
 elif args.dataset_name == 'Kanemaru2023':
-    input_path = root / 'Kanemaru2023' / 'Kanemaru2023-cardiac_tissue' / 'Kanemaru2023-cardiac_tissue-cell_by_cCRE.h5ad'
+    input_path = root / 'sample' / 'raw_h5ad' / 'Kanemaru2023_downsampled_10000_cells.h5ad'
 else:
     raise ValueError(f"Dataset {args.dataset_name} not supported")
 
 adata = sc.read_h5ad(input_path)
+
+# Load full dataset to transfer batch keys
+print("Loading full dataset to transfer batch keys...")
+if args.dataset_name == 'Li2023b':
+    full_dataset_path = root / 'Li2023b' / 'Li2023b-brain_tissue' / 'Li2023b-brain_tissue-cell_by_cCRE.h5ad'
+    batch_key_source = 'Batch (HSC)'
+    # Create matching key using sample + cell_barcode
+    adata_full = sc.read_h5ad(full_dataset_path)
+    adata_full.obs['match_key'] = adata_full.obs['sample'].astype(str) + '_' + adata_full.obs['cell_barcode'].astype(str)
+    adata.obs['match_key'] = adata.obs['sample'].astype(str) + '_' + adata.obs['cell_barcode'].astype(str)
+elif args.dataset_name == 'Kanemaru2023':
+    full_dataset_path = root / 'Kanemaru2023' / 'Kanemaru2023-cardiac_tissue' / 'Kanemaru2023-cardiac_tissue-cell_by_cCRE.h5ad'
+    batch_key_source = 'Batch (HSC)'
+    # Create matching key using sangerID
+    adata_full = sc.read_h5ad(full_dataset_path)
+    adata_full.obs['match_key'] = adata_full.obs['sangerID'].astype(str)
+    adata.obs['match_key'] = adata.obs['sangerID'].astype(str)
+else:
+    raise ValueError(f"Dataset {args.dataset_name} not supported")
+
+# Transfer batch key from full dataset
+if batch_key_source in adata_full.obs.columns:
+    # Create a mapping from match_key to batch
+    batch_mapping = adata_full.obs.set_index('match_key')[batch_key_source].to_dict()
+    
+    # Map batch keys to downsampled dataset
+    adata.obs[args.batch_key] = adata.obs['match_key'].map(batch_mapping)
+    
+    # Check how many cells got matched
+    matched_count = adata.obs[args.batch_key].notna().sum()
+    print(f"Transferred batch key '{args.batch_key}' to {matched_count} out of {len(adata)} cells")
+    
+    if matched_count < len(adata):
+        print(f"Warning: {len(adata) - matched_count} cells could not be matched to full dataset")
+else:
+    print(f"Warning: Batch key '{batch_key_source}' not found in full dataset. Available columns: {list(adata_full.obs.columns)}")
+    args.batch_key = None
+
+# Clean up temporary match_key column
+if 'match_key' in adata.obs.columns:
+    adata.obs = adata.obs.drop(columns=['match_key'])
 
 num_cell_types = len(adata.obs['cell_type'].unique())
 print(f"Number of cell types in the dataset: {num_cell_types}")
@@ -69,15 +106,23 @@ cCRE_document_frequency = np.load(root / 'cCRE_document_frequency.npy')
 
 cache_dir = Path('./cache')
 cache_dir.mkdir(exist_ok=True)
-cached_tokenized_path = cache_dir / f'{args.dataset_name}_tokenized.h5ad'
+cached_tokenized_path = cache_dir / f'{args.dataset_name}_10000_tokenized.h5ad'
 
 if cached_tokenized_path.exists():
     print(f"Loading cached tokenized data from {cached_tokenized_path}...")
     adata_tfidf = sc.read_h5ad(cached_tokenized_path)
     print("Cached tokenized data loaded successfully.")
+    # Transfer batch key if it's not already in the cached data
+    if args.batch_key is not None and args.batch_key not in adata_tfidf.obs.columns and args.batch_key in adata.obs.columns:
+        adata_tfidf.obs[args.batch_key] = adata.obs[args.batch_key].values
+        print(f"Transferred batch key '{args.batch_key}' to cached tokenized data")
 else:
     print("No cached tokenized data found. Computing from scratch...")
     adata_tfidf = global_TFIDF(adata, cCRE_document_frequency)
+    
+    # Ensure batch key is transferred to adata_tfidf
+    if args.batch_key is not None and args.batch_key in adata.obs.columns:
+        adata_tfidf.obs[args.batch_key] = adata.obs[args.batch_key].values
     
     print("Performing tokenization... (this takes a while)")
     tokenization(adata_tfidf)
@@ -95,8 +140,8 @@ print("Creating the DataLoader...")
 batch_size = 15
 dataloader = DataLoader(cell_dataset, batch_size=batch_size, shuffle=False, num_workers=4, collate_fn=collate_fn)
 
-os.makedirs(f'./saved_embeddings/{args.dataset_name}', exist_ok=True)
-embedding_save_path = f'./saved_embeddings/{args.dataset_name}/{args.dataset_name}-cell_embeddings.npy'
+os.makedirs(f'./saved_embeddings/{args.dataset_name}_10000', exist_ok=True)
+embedding_save_path = f'./saved_embeddings/{args.dataset_name}_10000/{args.dataset_name}_10000-cell_embeddings.npy'
 
 if os.path.exists(embedding_save_path):
     print(f"Loading saved cell embeddings from {embedding_save_path}...")
@@ -135,7 +180,7 @@ if fig is not None:
         legend = ax.get_legend()
         if legend is not None:
             legend.set_title('Cell type')
-output_dir = Path(f'./zero_shot_feature_extraction_{args.dataset_name}')
+output_dir = Path(f'./zero_shot_feature_extraction_{args.dataset_name}_10000')
 output_dir.mkdir(exist_ok=True)
 plt.savefig(output_dir / 'umap_cell_types_true_labels.png', dpi=300, bbox_inches='tight')
 plt.close(fig)
@@ -160,7 +205,7 @@ print(f"Optimal resolution: {optimal_resolution:.4f}")
 print(f"Number of Leiden clusters: {n_clusters}")
 
 print("visualizing UMAP with leiden clustering...")
-fig = sc.pl.umap(adata_tfidf, color='leiden', legend_loc='on data', title='Leiden Clustering (no shuffling)', return_fig=True, show=True)
+fig = sc.pl.umap(adata_tfidf, color='leiden', legend_loc='on data', title='Leiden Clustering (10000 cells)', return_fig=True, show=True)
 plt.savefig(output_dir / 'umap_leiden_clustering.png', dpi=300, bbox_inches='tight')
 plt.close(fig)
 print("UMAP visualization with leiden clustering saved")

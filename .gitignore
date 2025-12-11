@@ -21,6 +21,9 @@ ChromFound-Parallel/results-copy/
 ChromFound-Parallel/external_data/
 ChromFound-Parallel/data/sample/genetic_perturbation_data/**/*.csv
 ChromFound-Parallel/data/sample/genetic_perturbation_data/**/*.h5ad
+ChromFound-Parallel/zero_shot_feature_extraction_chromfound_Buenrostro2018-bone_marrow_tissue/
+ChromFound-Parallel/zero_shot_feature_extraction_chromfound_Kanemaru2023_downsampled/
+ChromFound-Parallel/zero_shot_feature_extraction_chromfound_Li2023b_downsampled/
 
 EpiAgent/epiagent.egg-info/*
 benchmarks/data/Kanemaru2023_chromfound_preprocessed.h5ad
