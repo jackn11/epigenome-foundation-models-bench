@@ -102,8 +102,8 @@ labels = [
     "ARI",
     "Silhouette",
     "Silhouette_batch",
-    "Cell type\n linear probe F1",
-    "Batch label\n linear probe F1",
+    "Cell type\n linear probe (F1)",
+    "Batch label\n linear probe (1-F1)",
     "Perturbation Effect Captured",
     "Perturbation Effect\n Biological Plausibility",
 ]

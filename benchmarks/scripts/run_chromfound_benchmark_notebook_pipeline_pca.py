@@ -16,6 +16,7 @@ Run this in the chromfound conda environment:
 import os
 import sys
 import json
+import argparse
 import scanpy as sc
 import pandas as pd
 import numpy as np
@@ -30,6 +31,34 @@ from joblib import Parallel, delayed
 import multiprocessing as mp
 import wandb
 
+def get_args_parser():
+    parser = argparse.ArgumentParser('ChromFound Benchmarking Script')
+    # starting from step 2 (no preprocessing)
+    # parser.add_argument('--dataset_name', type=str, default='Kanemaru2023_downsampled')
+    # parser.add_argument('--dataset_path', type=str, default='/scratch/wkim/project-2-team-1/ChromFound-Parallel/results-copy/chromfound/Kanemaru2023_downsampled/merge10/Kanemaru2023_downsampled_10000_cells_preprocessed_merge10.h5ad')
+    # parser.add_argument('--project_root', type=str, default='/scratch/wkim/project-2-team-1/')
+    
+    # starting from step 1 (preprocessing)
+    # parser.add_argument('--dataset_name', type=str, default='buenrostro2018_example')
+    # parser.add_argument('--dataset_path', type=str, default='/scratch/naimer/github/project-2-team-1/EpiAgent/data/Buenrostro2018/Buenrostro2018-bone_marrow_tissue/Buenrostro2018-bone_marrow_tissue-cell_by_cCRE.h5ad')
+    # parser.add_argument('--project_root', type=str, default='/scratch/wkim/project-2-team-1/')
+
+    # starting from step 1 (preprocessing)
+    # parser.add_argument('--dataset_name', type=str, default='Pierce2021')
+    # parser.add_argument('--dataset_path', type=str, default='/scratch/wkim/project-2-team-1/ChromFound-Parallel/external_data/GSE168851_crispr_perturb/K562_SpearATAC_for_chromfound.h5ad')
+    # parser.add_argument('--project_root', type=str, default='/scratch/wkim/project-2-team-1/')
+
+    # starting from step 2 (no preprocessing)
+    # parser.add_argument('--dataset_name', type=str, default='Pierce2021')
+    # parser.add_argument('--dataset_path', type=str, default='/scratch/wkim/project-2-team-1/benchmarks/results/chromfound/Pierce2021/merge10/Pierce2021_preprocessed_merge10.h5ad')
+    # parser.add_argument('--project_root', type=str, default='/scratch/wkim/project-2-team-1/')
+
+    # starting from step 1 (preprocessing)
+    parser.add_argument('--dataset_name', type=str, default='Liscovitch_Brauer2021')
+    parser.add_argument('--dataset_path', type=str, default='/scratch/wkim/project-2-team-1/ChromFound-Parallel/data/sample/genetic_perturbation_data/Liscovitch_Brauer2021/Liscovitch_Brauer2021_for_chromfound.h5ad')
+    parser.add_argument('--project_root', type=str, default='/scratch/wkim/project-2-team-1/')
+    return parser
+
 # Conversion function is defined below
 
 # Import ChromFound preprocessing functions
@@ -40,9 +69,9 @@ sys.path.insert(0, str(_chromfound_path))
 from src.data.atac_preprocess import deepen_atac_data
 
 
-dataset_name = "Kanemaru2023_downsampled"
-dataset_path = "data2/Kanemaru2023/Kanemaru2023-downsampled/Kanemaru2023_downsampled_10000_cells.h5ad"
-
+# dataset_name = "Kanemaru2023_downsampled"
+# dataset_path = "data2/Kanemaru2023/Kanemaru2023-downsampled/Kanemaru2023_downsampled_10000_cells.h5ad"
+# dataset_path = "/scratch/wkim/project-2-team-1/ChromFound-Parallel/results-copy/chromfound/Kanemaru2023_downsampled/merge10/Kanemaru2023_downsampled_10000_cells_preprocessed_merge10.h5ad"
 
 
 def convert_ccre_to_genomic_coords(adata, inplace=True):
@@ -123,7 +152,7 @@ def convert_ccre_to_genomic_coords(adata, inplace=True):
     return adata
 
 
-def setup_paths(num_cell_merge=1):
+def setup_paths(args, num_cell_merge=1):
     """Set up all file paths for the benchmark.
     
     Args:
@@ -135,19 +164,21 @@ def setup_paths(num_cell_merge=1):
     # Get project root (assuming script is in benchmarks/scripts/)
 
     
-    project_root = Path(__file__).parent.parent.parent
+    # project_root = Path(__file__).parent.parent.parent
+    project_root = Path(args.project_root)
     benchmarks_dir = project_root / "benchmarks"
     
     # Create merge-specific directory and file names
     merge_suffix = f"merge{num_cell_merge}"
-    results_subdir = benchmarks_dir / "results" / "chromfound" / dataset_name / merge_suffix
+    results_subdir = benchmarks_dir / "results" / "chromfound" / args.dataset_name / merge_suffix
+    # results_subdir = Path('/scratch/wkim/project-2-team-1/ChromFound-Parallel/results-copy/chromfound/Kanemaru2023_downsampled/merge10')
     
     paths = {
         "project_root": project_root,
         "benchmarks_dir": benchmarks_dir,
         "results_dir": results_subdir,
-        "input_data": benchmarks_dir / dataset_path,
-        "preprocessed_data": results_subdir / f"{dataset_name}_preprocessed_{merge_suffix}.h5ad",
+        "input_data": benchmarks_dir / args.dataset_path,
+        "preprocessed_data": results_subdir / f"{args.dataset_name}_preprocessed_{merge_suffix}.h5ad",
         "embeddings": results_subdir / "embeddings_pca.h5ad",  # Memory-efficient PCA version
         "metrics": results_subdir / "metrics.json",
         "kmeans_labels": results_subdir / "kmeans_labels.h5ad",
@@ -471,7 +502,7 @@ def cluster_and_evaluate(paths, num_cell_merge=1):
     return metrics
 
 
-def main():
+def main(args):
     """Main benchmarking pipeline."""
     print("\n" + "=" * 80)
     print("ChromFound Benchmarking Pipeline")
@@ -530,21 +561,21 @@ def main():
     num_cell_merge = 1 if merge_choice == '1' else 10
     
     # Setup paths with merge value
-    paths = setup_paths(num_cell_merge=num_cell_merge)
+    paths = setup_paths(args, num_cell_merge=num_cell_merge)
     print(f"\nOutput directory: {paths['results_dir']}")
     print(f"Using num_cell_merge={num_cell_merge}")
     
     # Initialize Weights & Biases
     wandb.init(
         project="chromfound-benchmark",
-        name=f"chromfound-merge{num_cell_merge}-gpu{gpu_device}_{dataset_name}",
-        tags=["chromfound", f"merge{num_cell_merge}", f"gpu{gpu_device}", dataset_name],
+        name=f"chromfound-merge{num_cell_merge}-gpu{gpu_device}_{args.dataset_name}",
+        tags=["chromfound", f"merge{num_cell_merge}", f"gpu{gpu_device}", args.dataset_name],
         config={
             "model": "chromfound",
             "num_cell_merge": num_cell_merge,
             "gpu_device": gpu_device,
-            "dataset": dataset_name,
-            "batch_size": 2,
+            "dataset": args.dataset_name,
+            "batch_size": 1,
             "n_pcs": 50,
         }
     )
@@ -621,5 +652,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = get_args_parser()
+    args = parser.parse_args()
+    main(args)
 
