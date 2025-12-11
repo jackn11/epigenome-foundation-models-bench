@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 from scipy.stats import spearmanr
 
 from sklearn.neighbors import NearestNeighbors
-import hdbscan
 
 CONTROL_LABEL = "control"        # we will remap sgsgNT -> control
 UNK_LABEL = "UNK"                # will be dropped
@@ -78,6 +77,7 @@ def hdbscan_filter_main_cluster(embeddings, perturbations):
     """
     Run HDBSCAN and keep only the largest non-noise cluster.
     """
+    import hdbscan
     print("[INFO] Running HDBSCAN to identify major cluster...")
     clusterer = hdbscan.HDBSCAN(
         min_cluster_size=200,

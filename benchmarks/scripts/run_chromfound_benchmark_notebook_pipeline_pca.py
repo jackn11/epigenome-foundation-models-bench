@@ -49,8 +49,13 @@ def get_args_parser():
     # parser.add_argument('--project_root', type=str, default='/scratch/wkim/project-2-team-1/')
 
     # starting from step 2 (no preprocessing)
-    parser.add_argument('--dataset_name', type=str, default='Pierce2021')
-    parser.add_argument('--dataset_path', type=str, default='/scratch/wkim/project-2-team-1/benchmarks/results/chromfound/Pierce2021/merge10/Pierce2021_preprocessed_merge10.h5ad')
+    # parser.add_argument('--dataset_name', type=str, default='Pierce2021')
+    # parser.add_argument('--dataset_path', type=str, default='/scratch/wkim/project-2-team-1/benchmarks/results/chromfound/Pierce2021/merge10/Pierce2021_preprocessed_merge10.h5ad')
+    # parser.add_argument('--project_root', type=str, default='/scratch/wkim/project-2-team-1/')
+
+    # starting from step 1 (preprocessing)
+    parser.add_argument('--dataset_name', type=str, default='Liscovitch_Brauer2021')
+    parser.add_argument('--dataset_path', type=str, default='/scratch/wkim/project-2-team-1/ChromFound-Parallel/data/sample/genetic_perturbation_data/Liscovitch_Brauer2021/Liscovitch_Brauer2021_for_chromfound.h5ad')
     parser.add_argument('--project_root', type=str, default='/scratch/wkim/project-2-team-1/')
     return parser
 
