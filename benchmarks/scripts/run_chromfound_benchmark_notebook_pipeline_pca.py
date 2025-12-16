@@ -171,7 +171,7 @@ def setup_paths(args, num_cell_merge=1):
     
     # Create merge-specific directory and file names
     merge_suffix = f"merge{num_cell_merge}"
-    results_subdir = benchmarks_dir / "results" / "chromfound" / args.dataset_name / merge_suffix
+    results_subdir = benchmarks_dir / "results-chrom" / "chromfound" / args.dataset_name / merge_suffix
     # results_subdir = Path('/scratch/wkim/project-2-team-1/ChromFound-Parallel/results-copy/chromfound/Kanemaru2023_downsampled/merge10')
     
     paths = {
@@ -587,7 +587,7 @@ def main(args):
             "num_cell_merge": num_cell_merge,
             "gpu_device": gpu_device,
             "dataset": args.dataset_name,
-            "batch_size": 1,
+            "batch_size": 2,
             "n_pcs": 50,
         }
     )
