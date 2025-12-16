@@ -44,3 +44,8 @@ EpiAgent/benchmarks/*/
 
 
 SANGO/
+
+EpiAgent/data
+benchmarks/data
+benchmarks/data2
+benchmarks/results-chrom

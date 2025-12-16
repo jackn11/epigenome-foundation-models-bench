@@ -1,7 +1,7 @@
 """
 ChromFound Benchmarking Script
 
-This script runs the full ChromFound pipeline on the Kanemaru2023 dataset:
+This script runs the full ChromFound pipeline on the given dataset:
 1. Converts cCRE identifiers to genomic coordinates
 2. Preprocesses data (QC, normalization, log transform)
 3. Runs ChromFound inference to generate embeddings
@@ -11,7 +11,7 @@ This script runs the full ChromFound pipeline on the Kanemaru2023 dataset:
 
 Run this in the chromfound conda environment:
     conda activate chromfound
-    python benchmarks/scripts/run_chromfound_benchmark.py
+    python benchmarks/scripts/run_chromfound_benchmark_notebook_pipeline.py
 """
 import os
 import sys
@@ -38,6 +38,11 @@ _project_root = Path(__file__).parent.parent.parent
 _chromfound_path = _project_root / "ChromFound-Parallel"
 sys.path.insert(0, str(_chromfound_path))
 from src.data.atac_preprocess import deepen_atac_data
+
+
+dataset_name = "Buenrostro2018"
+dataset_path = "data2/Buenrostro2018/Buenrostro2018-bone_marrow_tissue/Buenrostro2018-bone_marrow_tissue-cell_by_cCRE.h5ad"
+batch_key = "Batch (HSC)"
 
 
 def convert_ccre_to_genomic_coords(adata, inplace=True):
@@ -128,9 +133,6 @@ def setup_paths(num_cell_merge=1):
         Dictionary of file paths
     """
     # Get project root (assuming script is in benchmarks/scripts/)
-
-    dataset_name = "Kanemaru2023"
-    dataset_path = "/data2/Kanemaru2023/Kanemaru2023-cardiac_tissue/Kanemaru2023-cardiac_tissue-cell_by_cCRE.h5ad"
 
     
     project_root = Path(__file__).parent.parent.parent
@@ -312,6 +314,7 @@ def run_inference(paths, inference_config, data_args):
     return embeddings_path
 
 
+# TODO: Remove leiden resoultion here
 def cluster_and_evaluate(paths, leiden_resolution=0.45, num_cell_merge=1):
     """
     Apply PCA, Leiden clustering, and calculate metrics.
@@ -359,7 +362,7 @@ def cluster_and_evaluate(paths, leiden_resolution=0.45, num_cell_merge=1):
     
     # Apply PCA (reduce dimensionality)
     print("\n[3.1] Applying PCA (reducing dimensionality)...")
-    n_pcs = 10  # Use more PCs than EpiAgent's default, adjust as needed
+    n_pcs = 50  # Use more PCs than EpiAgent's default, adjust as needed
     sc.tl.pca(adata_emb, n_comps=n_pcs)
     print(f"  ✓ PCA complete: {n_pcs} principal components")
     
@@ -394,18 +397,8 @@ def cluster_and_evaluate(paths, leiden_resolution=0.45, num_cell_merge=1):
     # Calculate silhouette scores (same as EpiAgent)
     silhouette_score = silhouette(adata_emb, label_key=cell_type_col, embed='X_pca')
     
-    # Calculate batch silhouette if batch column exists
-    batch_key = None
-    for col in ['batch', 'Batch', 'sample', 'Sample']:
-        if col in adata_emb.obs.columns:
-            batch_key = col
-            break
-    
-    if batch_key is not None:
-        silhouette_batch_score = silhouette_batch(adata_emb, label_key=cell_type_col, batch_key=batch_key, embed='X_pca')
-    else:
-        silhouette_batch_score = None
-        print("  (No batch column found, skipping batch silhouette)")
+    # Calculate batch silhouette
+    silhouette_batch_score = silhouette_batch(adata_emb, label_key=cell_type_col, batch_key=batch_key, embed='X_pca')
     
     print(f"\nMetrics:")
     print(f"  ARI (Adjusted Rand Index): {ari_score:.4f}")
@@ -526,13 +519,13 @@ def main():
     # Initialize Weights & Biases
     wandb.init(
         project="chromfound-benchmark",
-        name=f"chromfound-merge{num_cell_merge}-gpu{gpu_device}_test",
-        tags=["chromfound", f"merge{num_cell_merge}", f"gpu{gpu_device}", "Buenrostro2018"],
+        name=f"chromfound-merge{num_cell_merge}-gpu{gpu_device}_{dataset_name}",
+        tags=["chromfound", f"merge{num_cell_merge}", f"gpu{gpu_device}", dataset_name],
         config={
             "model": "chromfound",
             "num_cell_merge": num_cell_merge,
             "gpu_device": gpu_device,
-            "dataset": "Buenrostro2018-bone_marrow_tissue",
+            "dataset": dataset_name,
             "batch_size": 2,
             "leiden_resolution": 0.45,
             "n_pcs": 50,
@@ -541,7 +534,7 @@ def main():
     
     # Configuration
     data_args = {
-        "cell_type_col": "cell_type",  # Buenrostro2018 dataset uses 'cell_type'
+        "cell_type_col": "cell_type",
         "num_cell_merge": num_cell_merge,
     }
     
