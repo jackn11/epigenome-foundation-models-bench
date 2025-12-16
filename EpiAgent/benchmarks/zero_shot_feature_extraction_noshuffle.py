@@ -141,6 +141,20 @@ plt.savefig(output_dir / 'umap_cell_types_true_labels.png', dpi=300, bbox_inches
 plt.close(fig)
 print("UMAP visualization saved")
 
+# Plot UMAP with batch labels if batch key exists
+import ipdb; ipdb.set_trace()
+if args.batch_key is not None and args.batch_key in adata_tfidf.obs.columns:
+    fig = sc.pl.umap(adata_tfidf, color=args.batch_key, return_fig=True, show=True, title='Cell embeddings (batch labels)')
+    if fig is not None:
+        axes = fig.axes if hasattr(fig, 'axes') else [ax for ax in fig.get_axes()]
+        for ax in axes:
+            legend = ax.get_legend()
+            if legend is not None:
+                legend.set_title('Batch')
+    plt.savefig(output_dir / 'umap_batch_labels.png', dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    print("UMAP visualization with batch labels saved")
+
 
 
 n_true_cell_types = len(adata_tfidf.obs['cell_type'].unique())

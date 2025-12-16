@@ -93,8 +93,8 @@ def get_args_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_name', 
                         type=str, 
-                        default='Kanemaru2023_downsampled',
-                        choices=['Kanemaru2023_downsampled', 'Buenrostro2018-bone_marrow_tissue', 'Li2023b_downsampled'],
+                        default='Kanemaru2023_full',
+                        choices=['Kanemaru2023_full', 'Li2023b_full'],
                         help='Dataset name')
     parser.add_argument('--embeddings_path', 
                         type=str, 
@@ -102,7 +102,7 @@ def get_args_parser():
                         help='Path to ChromFound embeddings h5ad file (optional, will use default based on dataset_name if not provided)')
     parser.add_argument('--batch_key', 
                         type=str, 
-                        default=None,
+                        default="Batch (HSC)",
                         help='Batch key column name in obs (optional, will try to detect if not provided)')
     parser.add_argument('--root', 
                         type=str, 
@@ -115,19 +115,20 @@ def get_args_parser():
 parser = get_args_parser()
 args = parser.parse_args()
 
-# Map dataset names to embedding file paths
-if args.embeddings_path is None:
-    root = Path(args.root)
-    if args.dataset_name == 'Kanemaru2023_downsampled':
-        embeddings_path = root / 'Kanemaru2023_downsampled' / 'merge10' / 'embeddings_pca.h5ad'
-    elif args.dataset_name == 'Buenrostro2018-bone_marrow_tissue':
-        embeddings_path = root / 'Buenrostro2018-bone_marrow_tissue' / 'merge10' / 'embeddings.h5ad'
-    elif args.dataset_name == 'Li2023b_downsampled':
-        embeddings_path = root / 'Li2023b_downsampled' / 'merge10' / 'embeddings_pca.h5ad'
-    else:
-        raise ValueError(f"Dataset {args.dataset_name} not supported")
-else:
-    embeddings_path = Path(args.embeddings_path)
+assert args.embeddings_path is not None, "Embeddings path is required"
+embeddings_path = Path(args.embeddings_path)
+# if args.embeddings_path is None:
+#     root = Path(args.root)
+#     if args.dataset_name == 'Kanemaru2023_downsampled':
+#         embeddings_path = root / 'Kanemaru2023_downsampled' / 'merge10' / 'embeddings_pca.h5ad'
+#     elif args.dataset_name == 'Buenrostro2018-bone_marrow_tissue':
+#         embeddings_path = root / 'Buenrostro2018-bone_marrow_tissue' / 'merge10' / 'embeddings.h5ad'
+#     elif args.dataset_name == 'Li2023b_downsampled':
+#         embeddings_path = root / 'Li2023b_downsampled' / 'merge10' / 'embeddings_pca.h5ad'
+#     else:
+#         raise ValueError(f"Dataset {args.dataset_name} not supported")
+# else:
+#     embeddings_path = Path(args.embeddings_path)
 
 # Load ChromFound embeddings
 print(f"Loading ChromFound embeddings from {embeddings_path}...")
@@ -135,9 +136,11 @@ adata = sc.read_h5ad(embeddings_path)
 
 # Extract embeddings from obsm (different datasets use different keys)
 embedding_key_map = {
-    'Kanemaru2023_downsampled': 'X_pca',
-    'Buenrostro2018-bone_marrow_tissue': 'X_embedding',
-    'Li2023b_downsampled': 'X_pca'
+    # 'Kanemaru2023_downsampled': 'X_pca',
+    # 'Buenrostro2018-bone_marrow_tissue': 'X_embedding',
+    # 'Li2023b_downsampled': 'X_pca',
+    'Kanemaru2023_full': 'X_pca',
+    'Li2023b_full': 'X_pca',
 }
 
 if args.dataset_name in embedding_key_map:
@@ -234,6 +237,19 @@ output_dir.mkdir(exist_ok=True)
 plt.savefig(output_dir / 'umap_cell_types_true_labels.png', dpi=300, bbox_inches='tight')
 plt.close(fig)
 print("UMAP visualization saved")
+
+# Plot UMAP with batch labels if batch key exists
+if args.batch_key is not None:
+    fig = sc.pl.umap(adata, color=args.batch_key, return_fig=True, show=True, title='Cell embeddings (batch labels)')
+    if fig is not None:
+        axes = fig.axes if hasattr(fig, 'axes') else [ax for ax in fig.get_axes()]
+        for ax in axes:
+            legend = ax.get_legend()
+            if legend is not None:
+                legend.set_title('Batch')
+    plt.savefig(output_dir / 'umap_batch_labels.png', dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    print("UMAP visualization with batch labels saved")
 
 n_true_cell_types = len(adata.obs['cell_type'].unique())
 print(f"Number of cell types: {n_true_cell_types}")

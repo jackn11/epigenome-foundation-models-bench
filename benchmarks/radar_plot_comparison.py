@@ -10,7 +10,7 @@ from pathlib import Path
 def load_epiagent_results():
     """Load EpiAgent benchmark results"""
     # Load feature extraction benchmark results
-    feature_extraction_datasets = ["Kanemaru2023_10000", "Li2023b_10000"]
+    feature_extraction_datasets = ["Kanemaru2023", "Li2023b"]
     epiagent_root = Path("../EpiAgent/benchmarks")
     feature_extraction_result_csvs = {dataset: epiagent_root / f"zero_shot_feature_extraction_{dataset}/results.csv" for dataset in feature_extraction_datasets}
 
@@ -52,7 +52,7 @@ def load_epiagent_results():
 def load_chromfound_results():
     """Load ChromFound benchmark results"""
     # Load feature extraction benchmark results
-    feature_extraction_datasets = ["Kanemaru2023_downsampled", "Li2023b_downsampled"]
+    feature_extraction_datasets = ["Kanemaru2023_full", "Li2023b_full"]
     chromfound_root = Path("../ChromFound-Parallel")
     feature_extraction_result_csvs = {dataset: chromfound_root / f"zero_shot_feature_extraction_chromfound_{dataset}/results.csv" for dataset in feature_extraction_datasets}
 
@@ -251,35 +251,47 @@ epiagent_norm_display = epiagent_norm
 chromfound_norm_display = chromfound_norm
 
 for angle, epi_norm, epi_val, chrom_norm, chrom_val in zip(angles_display, epiagent_norm_display, epiagent_values_display, chromfound_norm_display, chromfound_values_display):
-    # Position annotations to avoid overlap
-    # EpiAgent annotation above, ChromFound below
-    epi_text_radius = epi_norm + 0.12
-    chrom_text_radius = chrom_norm - 0.12
+    # Position annotations dynamically based on which value is larger
+    # The method with the larger value gets the outer position (further from center)
+    if chrom_val > epi_val:
+        # ChromFound is larger, so it goes outer
+        chrom_text_radius = max(chrom_norm, epi_norm) + 0.12
+        epi_text_radius = min(chrom_norm, epi_norm) - 0.12
+    else:
+        # EpiAgent is larger or equal, so it goes outer
+        epi_text_radius = max(chrom_norm, epi_norm) + 0.12
+        chrom_text_radius = min(chrom_norm, epi_norm) - 0.12
     
     # Adjust if they would go out of bounds
     if epi_text_radius > 1.0:
-        epi_text_radius = epi_norm - 0.15
+        epi_text_radius = max(chrom_norm, epi_norm) - 0.15
     if chrom_text_radius < 0:
-        chrom_text_radius = chrom_norm + 0.15
+        chrom_text_radius = min(chrom_norm, epi_norm) + 0.15
+    if epi_text_radius < 0:
+        epi_text_radius = max(chrom_norm, epi_norm) - 0.15
+    if chrom_text_radius > 1.0:
+        chrom_text_radius = min(chrom_norm, epi_norm) + 0.15
     
     # EpiAgent value annotation
     ax.text(angle, epi_text_radius, f'E:{epi_val:.3f}', 
-            ha='center', va='center', fontsize=7, 
+            ha='center', va='center', fontsize=14, 
             bbox=dict(boxstyle='round,pad=0.2', facecolor='#1f77b4', alpha=0.7, edgecolor='none'),
             color='white', fontweight='bold')
     
     # ChromFound value annotation
     ax.text(angle, chrom_text_radius, f'C:{chrom_val:.3f}', 
-            ha='center', va='center', fontsize=7, 
+            ha='center', va='center', fontsize=14, 
             bbox=dict(boxstyle='round,pad=0.2', facecolor='#ff7f0e', alpha=0.7, edgecolor='none'),
             color='white', fontweight='bold')
 
-ax.set_xticks(angles)
-ax.set_xticklabels(labels_closed)
-ax.set_title('EpiAgent vs ChromFound Comparison', pad=20, fontsize=14, fontweight='bold')
+# Remove angle degree labels (keep grid lines but hide labels)
+ax.set_xticklabels([])
+# ax.set_xticks(angles)
+# ax.set_xticklabels(labels_closed)
+# ax.set_title('EpiAgent vs ChromFound Comparison', pad=20, fontsize=14, fontweight='bold')
 
 # Add legend
-ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), fontsize=10)
+# ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), fontsize=10)
 
 plt.tight_layout()
 plt.savefig("radar_plot_comparison.png", dpi=300, bbox_inches='tight')

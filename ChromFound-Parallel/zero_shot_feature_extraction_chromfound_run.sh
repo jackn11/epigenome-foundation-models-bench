@@ -1,3 +1,2 @@
-# python zero_shot_feature_extraction_chromfound.py --dataset_name Kanemaru2023_downsampled
-# python zero_shot_feature_extraction_chromfound.py --dataset_name Buenrostro2018-bone_marrow_tissue
-python zero_shot_feature_extraction_chromfound.py --dataset_name Li2023b_downsampled
+python zero_shot_feature_extraction_chromfound.py --dataset_name Kanemaru2023_full --embeddings_path /scratch/wkim/project-2-team-1/ChromFound-Parallel/results-copy/chromfound/Kanemaru2023_full/merge10/embeddings_pca.h5ad
+# python zero_shot_feature_extraction_chromfound.py --dataset_name Li2023b_full --embeddings_path /scratch/wkim/project-2-team-1/ChromFound-Parallel/results-copy/chromfound/Li2023b_full/merge10/embeddings_pca.h5ad
