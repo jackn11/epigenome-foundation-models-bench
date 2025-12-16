@@ -12,7 +12,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-from scib.metrics import silhouette, silhouette_batch
+from scib.metrics import silhouette, silhouette_batch, ilisi_graph, pcr, graph_connectivity
 import pandas as pd
 
 SEED = 42
@@ -299,6 +299,34 @@ cell_types = adata.obs['cell_type'].values
 silhouette_samples_scores = silhouette_samples(cell_embeddings, cell_types)
 mean_silhouette_per_group = pd.Series(silhouette_samples_scores, index=cell_types).groupby(cell_types).mean().mean()
 
+# Calculate graph connectivity (biological conservation metric - measures if same cell types stay connected)
+# Higher is better (1 = fully connected, 0 = disconnected)
+print("Calculating graph connectivity...")
+graph_connectivity_score = graph_connectivity(adata, label_key='cell_type')
+print(f"  Graph connectivity score: {graph_connectivity_score:.4f}")
+
+# Calculate batch integration metrics (ilisi, pcr_batch)
+if args.batch_key is not None:
+    print("Calculating batch integration metrics...")
+    
+    # Calculate ilisi (Integration Local Inverse Simpson's Index)
+    # Higher is better (more batch mixing)
+    print("  Calculating ilisi...")
+    ilisi_score = ilisi_graph(adata, batch_key=args.batch_key, type_='embed', use_rep='cell_embeddings_zero_shot')
+    
+    # Calculate PCR batch (Principal Component Regression)
+    # Lower is better (less batch effect), so we'll store 1-pcr for "higher is better" interpretation
+    print("  Calculating PCR batch...")
+    pcr_batch_score_raw = pcr(adata, covariate=args.batch_key, embed='cell_embeddings_zero_shot', recompute_pca=True)
+    pcr_batch_score = 1 - pcr_batch_score_raw  # Invert so higher is better
+    
+    print(f"  ilisi score: {ilisi_score:.4f} (higher is better)")
+    print(f"  PCR batch score (1-PCR): {pcr_batch_score:.4f} (higher is better, original PCR: {pcr_batch_score_raw:.4f})")
+else:
+    ilisi_score = None
+    pcr_batch_score = None
+    print("Skipping batch integration metrics (no batch key available)")
+
 # Train linear probe on cell embeddings using cell type labels
 print("Training linear probe on embeddings...")
 cell_types = adata.obs['cell_type'].values
@@ -377,6 +405,11 @@ print(f"Silhouette score: {silhouette_score:.4f}")
 if silhouette_batch_score is not None:
     print(f"Silhouette batch score: {silhouette_batch_score:.4f}")
 print(f"Mean silhouette per group: {mean_silhouette_per_group:.4f}")
+print(f"Graph connectivity score: {graph_connectivity_score:.4f}")
+if ilisi_score is not None:
+    print(f"ilisi score: {ilisi_score:.4f}")
+if pcr_batch_score is not None:
+    print(f"PCR batch score (1-PCR): {pcr_batch_score:.4f}")
 print(f"Linear probe accuracy: {linear_probe_accuracy:.4f}")
 print(f"Linear probe F1 score (macro): {linear_probe_f1_macro:.4f}")
 print(f"Linear probe F1 score (weighted): {linear_probe_f1_weighted:.4f}")
@@ -412,6 +445,19 @@ results_data = {
 if silhouette_batch_score is not None:
     results_data['Metric'].insert(3, 'Silhouette batch score')
     results_data['Value'].insert(3, silhouette_batch_score)
+
+# Add graph connectivity (biological conservation metric)
+results_data['Metric'].append('Graph connectivity score')
+results_data['Value'].append(graph_connectivity_score)
+
+# Add batch integration metrics
+if ilisi_score is not None:
+    results_data['Metric'].append('ilisi score')
+    results_data['Value'].append(ilisi_score)
+
+if pcr_batch_score is not None:
+    results_data['Metric'].append('PCR batch score (1-PCR)')
+    results_data['Value'].append(pcr_batch_score)
 
 if linear_probe_batch_accuracy is not None:
     results_data['Metric'].extend([

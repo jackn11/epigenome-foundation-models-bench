@@ -46,6 +46,8 @@ python -c "import torch; assert torch.cuda.is_available(), 'ERROR: CUDA not avai
 pip install mamba-ssm==2.2.4 --no-build-isolation
 pip install flash-attn==2.5.8 --no-build-isolation
 
+pip install 'scib>=1.1.7'
+
 # 6) Test installs
 python test_imports_simple.py
 ```

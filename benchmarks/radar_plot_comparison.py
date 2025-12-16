@@ -132,6 +132,30 @@ def aggregate_metrics(feature_extraction_results, perturbation_results, feature_
                 batch_linear_probe_f1_values.append(feature_extraction_results[dataset]['Batch label Linear probe F1 score (macro)'])
     batch_linear_probe_f1 = np.array(batch_linear_probe_f1_values).mean() if len(batch_linear_probe_f1_values) > 0 else 0
 
+    # Graph connectivity
+    graph_connectivity_values = []
+    for dataset in feature_extraction_datasets:
+        if dataset in feature_extraction_results:
+            if 'Graph connectivity score' in feature_extraction_results[dataset]:
+                graph_connectivity_values.append(feature_extraction_results[dataset]['Graph connectivity score'])
+    graph_connectivity = np.array(graph_connectivity_values).mean() if len(graph_connectivity_values) > 0 else 0
+
+    # ilisi
+    ilisi_values = []
+    for dataset in feature_extraction_datasets:
+        if dataset in feature_extraction_results:
+            if 'ilisi score' in feature_extraction_results[dataset]:
+                ilisi_values.append(feature_extraction_results[dataset]['ilisi score'])
+    ilisi = np.array(ilisi_values).mean() if len(ilisi_values) > 0 else 0
+
+    # PCR batch (already inverted to 1-PCR in the feature extraction script)
+    pcr_batch_values = []
+    for dataset in feature_extraction_datasets:
+        if dataset in feature_extraction_results:
+            if 'PCR batch score (1-PCR)' in feature_extraction_results[dataset]:
+                pcr_batch_values.append(feature_extraction_results[dataset]['PCR batch score (1-PCR)'])
+    pcr_batch = np.array(pcr_batch_values).mean() if len(pcr_batch_values) > 0 else 0
+
     # Aggregate perturbation metrics
     cohens_d_values = []
     for dataset in perturbation_datasets:
@@ -152,6 +176,9 @@ def aggregate_metrics(feature_extraction_results, perturbation_results, feature_
         'silhouette_batch': silhouette_batch,
         'cell_type_linear_probe_f1': cell_type_linear_probe_f1,
         'batch_linear_probe_f1': batch_linear_probe_f1,
+        'graph_connectivity': graph_connectivity,
+        'ilisi': ilisi,
+        'pcr_batch': pcr_batch,
         'cohens_d': cohens_d,
         'biological_plausibility': biological_plausibility
     }
@@ -180,24 +207,30 @@ labels = [
     "NMI",
     "ARI",
     "Silhouette",
-    "Silhouette_batch",
-    "Cell type\n linear probe (F1)",
-    "Batch label\n linear probe (1-F1)",
-    "Perturbation Effect Captured",
-    "Perturbation Effect\n Biological Plausibility",
+    "Graph\nConnectivity",
+    "Cell type\nLinear Probe (F1)",
+    "Silhouette\nBatch",
+    "Batch Label\nLinear Probe (1-F1)",
+    "ilisi",
+    "PCR Batch\n(1-PCR)",
+    "Perturbation Effect\nCaptured",
+    "Perturbation Effect\nBiological Plausibility",
 ]
 
-mins = np.array([0, 0, 0, 0, 0, 0, 0, 0])
-maxs = np.array([1, 1, 1, 1, 1, 1, 0.2, 0.4])
+mins = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+maxs = np.array([1, 1, 1, 1, 1, 1, 1, 1, 1, 0.2, 0.4])
 
 # EpiAgent values
 epiagent_values = np.array([
     epiagent_metrics['nmi'],
     epiagent_metrics['ari'],
     epiagent_metrics['silhouette'],
-    epiagent_metrics['silhouette_batch'],
+    epiagent_metrics['graph_connectivity'],
     epiagent_metrics['cell_type_linear_probe_f1'],
+    epiagent_metrics['silhouette_batch'],
     1 - epiagent_metrics['batch_linear_probe_f1'],
+    epiagent_metrics['ilisi'],
+    epiagent_metrics['pcr_batch'],
     epiagent_metrics['cohens_d'],
     epiagent_metrics['biological_plausibility']
 ])
@@ -207,9 +240,12 @@ chromfound_values = np.array([
     chromfound_metrics['nmi'],
     chromfound_metrics['ari'],
     chromfound_metrics['silhouette'],
-    chromfound_metrics['silhouette_batch'],
+    chromfound_metrics['graph_connectivity'],
     chromfound_metrics['cell_type_linear_probe_f1'],
+    chromfound_metrics['silhouette_batch'],
     1 - chromfound_metrics['batch_linear_probe_f1'],
+    chromfound_metrics['ilisi'],
+    chromfound_metrics['pcr_batch'],
     chromfound_metrics['cohens_d'],
     chromfound_metrics['biological_plausibility']
 ])
