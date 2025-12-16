@@ -1,0 +1,12 @@
+Metric,Value
+Adjusted Rand Index,0.6120359883215178
+Normalized Mutual Information,0.7767195681073621
+Silhouette score,0.5477501265704632
+Silhouette batch score,0.733723911059402
+Mean silhouette per group,0.08456499129533768
+Cell type Linear probe accuracy,0.9718954482068152
+Cell type Linear probe F1 score (macro),0.778897787797033
+Cell type Linear probe F1 score (weighted),0.9704445652321987
+Batch label Linear probe accuracy,0.4662638109200129
+Batch label Linear probe F1 score (macro),0.3184242996969061
+Batch label Linear probe F1 score (weighted),0.4296555671005783

@@ -9,7 +9,7 @@ import pandas as pd
 
 #%%
 # Load feature extraction benchmark results
-feature_extraction_datasets = ["Buenrostro2018", "Kanemaru2023", "Li2023b"]
+feature_extraction_datasets = ["Kanemaru2023", "Li2023b"]
 feature_extraction_result_csvs = {dataset:f"zero_shot_feature_extraction_{dataset}/results.csv" for dataset in feature_extraction_datasets}
 
 feature_extraction_results = {}
@@ -111,7 +111,7 @@ labels = [
 values = np.array([nmi, ari, silhouette, silhouette_batch, cell_type_linear_probe_f1, 1-batch_linear_probe_f1, cohens_d, biological_plausibility])
 print("values: ", values)
 mins   = np.array([0, 0, 0, 0, 0, 0, 0, 0])
-maxs   = np.array([1, 1, 1, 1, 1, 0.5, 0.2, 0.4])
+maxs   = np.array([1, 1, 1, 1, 1, 1, 0.2, 0.4])
 
 # 2. Normalize into [0, 1]
 norm = (values - mins) / (maxs - mins)
