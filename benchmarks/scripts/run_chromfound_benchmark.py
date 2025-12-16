@@ -131,22 +131,23 @@ def setup_paths(num_cell_merge=1):
     
     # Create merge-specific directory and file names
     merge_suffix = f"merge{num_cell_merge}"
-    results_subdir = benchmarks_dir / "results" / "chromfound" / merge_suffix
+    results_subdir = benchmarks_dir / "results" / "chromfound" / "Kanemaru2023_full" / merge_suffix
     
     paths = {
         "project_root": project_root,
         "benchmarks_dir": benchmarks_dir,
-        "data_dir": benchmarks_dir / "data",
+        "data_dir": benchmarks_dir / "data2",
         "results_dir": results_subdir,
-        "input_data": benchmarks_dir / "data" / "Kanemaru2023_downsampled_10000_cells.h5ad",
-        "preprocessed_data": benchmarks_dir / "data" / f"Kanemaru2023_chromfound_preprocessed_{merge_suffix}.h5ad",
+        "input_data": benchmarks_dir / "data2" / "Kanemaru2023/Kanemaru2023-cardiac_tissue/Kanemaru2023-cardiac_tissue-cell_by_cCRE.h5ad",
+        "preprocessed_data": benchmarks_dir / "data2" / "preprocessed_chromfound" / f"Kanemaru2023-cardiac_tissue-cell_by_cCRE_chromfound_preprocessed_{merge_suffix}.h5ad",
         "embeddings": results_subdir / "embeddings.h5ad",
         "metrics": results_subdir / "metrics.json",
         "leiden_labels": results_subdir / "leiden_labels.h5ad",
     }
     
-    # Create results directory if it doesn't exist
+    # Create directories if they don't exist
     paths["results_dir"].mkdir(parents=True, exist_ok=True)
+    paths["preprocessed_data"].parent.mkdir(parents=True, exist_ok=True)
     
     return paths
 
@@ -323,6 +324,8 @@ def cluster_and_evaluate(paths, leiden_resolution=0.45, num_cell_merge=1):
     # Load embeddings
     print(f"\nLoading embeddings from: {paths['embeddings']}")
     adata = sc.read_h5ad(paths['embeddings'])
+    # adata = adata[:1000] # TODO: Remove this
+    # TODO add pip install igraph, leidenalg
     
     # Extract embeddings and cell type labels
     if 'X_embedding' in adata.obsm:
@@ -363,7 +366,17 @@ def cluster_and_evaluate(paths, leiden_resolution=0.45, num_cell_merge=1):
     
     # Leiden clustering (matching EpiAgent approach)
     print(f"\n[3.4] Performing Leiden clustering (resolution={leiden_resolution})...")
-    sc.tl.leiden(adata_emb, resolution=leiden_resolution, key_added='leiden', random_state=42)
+
+    from benchmark_utils import find_leiden_resolution_for_n_clusters
+    optimal_resolution, n_clusters = find_leiden_resolution_for_n_clusters(
+        adata_emb, 
+        target_n_clusters=len(np.unique(adata_emb.obs[cell_type_col].values)),
+        min_res=0.1,
+        max_res=2.0,
+        random_state=42
+    )
+
+    sc.tl.leiden(adata_emb, resolution=optimal_resolution, key_added='leiden', random_state=42)
     
     n_clusters = len(adata_emb.obs['leiden'].unique())
     print(f"Number of Leiden clusters: {n_clusters}")
@@ -402,7 +415,7 @@ def cluster_and_evaluate(paths, leiden_resolution=0.45, num_cell_merge=1):
     if wandb.run is not None:
         wandb.log(metrics)
     
-    return metrics
+    # return metrics
     
     # Save Leiden labels
     print(f"Saving Leiden labels to: {paths['leiden_labels']}")
@@ -410,10 +423,11 @@ def cluster_and_evaluate(paths, leiden_resolution=0.45, num_cell_merge=1):
     
     # Save embeddings with clustering results
     print(f"\n[3.5] Saving results...")
-    print(f"  Saving embeddings with clustering to: {paths['embeddings']}")
-    adata_emb.write_h5ad(paths['embeddings'])
+    # TODO: Uncomment
+    # print(f"  Saving embeddings with clustering to: {paths['embeddings']}")
+    # adata_emb.write_h5ad(paths['embeddings'])
     
-    print(f"\n✓ STEP 3 COMPLETE at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    # print(f"\n✓ STEP 3 COMPLETE at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
     return metrics
 
@@ -484,7 +498,7 @@ def main():
     # Initialize Weights & Biases
     wandb.init(
         project="chromfound-benchmark",
-        name=f"chromfound-merge{num_cell_merge}-gpu{gpu_device}",
+        name=f"chromfound-merge{num_cell_merge}-gpu{gpu_device}_kanemaru2023_full",
         tags=["chromfound", f"merge{num_cell_merge}", f"gpu{gpu_device}", "kanemaru2023"],
         config={
             "model": "chromfound",
@@ -538,6 +552,10 @@ def main():
         
         # Step 2: Run inference
         run_inference(paths, inference_config, data_args)
+        
+        print("Inference successful, quitting...")
+        sys.exit(0)
+
         
         # Step 3: Cluster and evaluate
         metrics = cluster_and_evaluate(paths, leiden_resolution=0.45, num_cell_merge=num_cell_merge)
