@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 from scib.metrics import silhouette, silhouette_batch
 import pandas as pd
 
-from benchmark_utils import prepare_img, find_leiden_resolution_for_n_clusters
+from benchmarks.benchmark_utils import prepare_img, find_leiden_resolution_for_n_clusters
 
 SEED = 42
 random.seed(SEED)

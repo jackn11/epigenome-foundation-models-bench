@@ -19,7 +19,7 @@ from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 import matplotlib.pyplot as plt
 from scib.metrics import silhouette, silhouette_batch
 
-from benchmark_utils import prepare_img, find_leiden_resolution_for_n_clusters
+from benchmarks.benchmark_utils import prepare_img, find_leiden_resolution_for_n_clusters
 
 
 
