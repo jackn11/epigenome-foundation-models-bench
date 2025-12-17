@@ -1,0 +1,1 @@
+Spearman correlation = -0.565478, p=0.000143404
