@@ -269,84 +269,84 @@ plt.close(fig)
 print("UMAP visualization with leiden clustering saved")
 
 
-# print("calculating NMI and ARI scores...")
-# true_labels = adata_tfidf.obs['cell_type'].values
-# predicted_labels = adata_tfidf.obs['leiden'].values
+print("calculating NMI and ARI scores...")
+true_labels = adata_tfidf.obs['cell_type'].values
+predicted_labels = adata_tfidf.obs['leiden'].values
 
-# ari_score = adjusted_rand_score(true_labels, predicted_labels)
-# nmi_score = normalized_mutual_info_score(true_labels, predicted_labels)
+ari_score = adjusted_rand_score(true_labels, predicted_labels)
+nmi_score = normalized_mutual_info_score(true_labels, predicted_labels)
 
-# print("calculating silhouette scores...")
-# silhouette_score = silhouette(adata_tfidf, label_key='cell_type', embed='cell_embeddings_zero_shot')
-# silhouette_batch_score = silhouette_batch(adata_tfidf, label_key='cell_type', batch_key=args.batch_key, embed='cell_embeddings_zero_shot')
+print("calculating silhouette scores...")
+silhouette_score = silhouette(adata_tfidf, label_key='cell_type', embed='cell_embeddings_zero_shot')
+silhouette_batch_score = silhouette_batch(adata_tfidf, label_key='cell_type', batch_key=args.batch_key, embed='cell_embeddings_zero_shot')
 
-# # Calculate mean silhouette per group
-# cell_embeddings = adata_tfidf.obsm['cell_embeddings_zero_shot']
-# cell_types = adata_tfidf.obs['cell_type'].values
-# silhouette_samples_scores = silhouette_samples(cell_embeddings, cell_types)
-# mean_silhouette_per_group = pd.Series(silhouette_samples_scores, index=cell_types).groupby(cell_types).mean().mean()
+# Calculate mean silhouette per group
+cell_embeddings = adata_tfidf.obsm['cell_embeddings_zero_shot']
+cell_types = adata_tfidf.obs['cell_type'].values
+silhouette_samples_scores = silhouette_samples(cell_embeddings, cell_types)
+mean_silhouette_per_group = pd.Series(silhouette_samples_scores, index=cell_types).groupby(cell_types).mean().mean()
 
-# print("Calculating graph connectivity...")
-# graph_connectivity_score = graph_connectivity(adata_tfidf, label_key='cell_type')
-# print(f"Graph connectivity score: {graph_connectivity_score:.4f}")
+print("Calculating graph connectivity...")
+graph_connectivity_score = graph_connectivity(adata_tfidf, label_key='cell_type')
+print(f"Graph connectivity score: {graph_connectivity_score:.4f}")
 
-# print("Training linear probe on embeddings...")
-# cell_types = adata_tfidf.obs['cell_type'].values
+print("Training linear probe on embeddings...")
+cell_types = adata_tfidf.obs['cell_type'].values
 
-# X_train, X_val, y_train, y_val = train_test_split(
-#     cell_embeddings,
-#     cell_types,
-#     test_size=0.2,
-#     stratify=cell_types,
-#     random_state=SEED
-# )
+X_train, X_val, y_train, y_val = train_test_split(
+    cell_embeddings,
+    cell_types,
+    test_size=0.2,
+    stratify=cell_types,
+    random_state=SEED
+)
 
-# print(f"Training on {len(X_train)} samples, validating on {len(X_val)} samples...")
-# linear_probe = LogisticRegression(
-#     max_iter=1000,
-#     random_state=SEED,
-#     multi_class='multinomial',
-#     solver='lbfgs',
-# )
-# linear_probe.fit(X_train, y_train)
+print(f"Training on {len(X_train)} samples, validating on {len(X_val)} samples...")
+linear_probe = LogisticRegression(
+    max_iter=1000,
+    random_state=SEED,
+    multi_class='multinomial',
+    solver='lbfgs',
+)
+linear_probe.fit(X_train, y_train)
 
-# y_val_pred = linear_probe.predict(X_val)
-# linear_probe_accuracy = accuracy_score(y_val, y_val_pred)
-# linear_probe_f1_macro = f1_score(y_val, y_val_pred, average='macro')
-# linear_probe_f1_weighted = f1_score(y_val, y_val_pred, average='weighted')
+y_val_pred = linear_probe.predict(X_val)
+linear_probe_accuracy = accuracy_score(y_val, y_val_pred)
+linear_probe_f1_macro = f1_score(y_val, y_val_pred, average='macro')
+linear_probe_f1_weighted = f1_score(y_val, y_val_pred, average='weighted')
 
-# print(f"Linear probe accuracy: {linear_probe_accuracy:.4f}")
-# print(f"Linear probe F1 score (macro): {linear_probe_f1_macro:.4f}")
-# print(f"Linear probe F1 score (weighted): {linear_probe_f1_weighted:.4f}")
+print(f"Linear probe accuracy: {linear_probe_accuracy:.4f}")
+print(f"Linear probe F1 score (macro): {linear_probe_f1_macro:.4f}")
+print(f"Linear probe F1 score (weighted): {linear_probe_f1_weighted:.4f}")
 
 
-# print("\nTraining linear probe on embeddings (batch labels)...")
-# batch_labels = adata_tfidf.obs[args.batch_key].values
-# X_train_batch, X_val_batch, y_train_batch, y_val_batch = train_test_split(
-#     cell_embeddings,
-#     batch_labels,
-#     test_size=0.2,
-#     stratify=batch_labels,
-#     random_state=SEED
-# )
+print("\nTraining linear probe on embeddings (batch labels)...")
+batch_labels = adata_tfidf.obs[args.batch_key].values
+X_train_batch, X_val_batch, y_train_batch, y_val_batch = train_test_split(
+    cell_embeddings,
+    batch_labels,
+    test_size=0.2,
+    stratify=batch_labels,
+    random_state=SEED
+)
 
-# print(f"Training on {len(X_train_batch)} samples, validating on {len(X_val_batch)} samples...")
-# linear_probe_batch = LogisticRegression(
-#     max_iter=1000,
-#     random_state=SEED,
-#     multi_class='multinomial',
-#     solver='lbfgs',
-# )
-# linear_probe_batch.fit(X_train_batch, y_train_batch)
+print(f"Training on {len(X_train_batch)} samples, validating on {len(X_val_batch)} samples...")
+linear_probe_batch = LogisticRegression(
+    max_iter=1000,
+    random_state=SEED,
+    multi_class='multinomial',
+    solver='lbfgs',
+)
+linear_probe_batch.fit(X_train_batch, y_train_batch)
 
-# y_val_pred_batch = linear_probe_batch.predict(X_val_batch)
-# linear_probe_batch_accuracy = accuracy_score(y_val_batch, y_val_pred_batch)
-# linear_probe_batch_f1_macro = f1_score(y_val_batch, y_val_pred_batch, average='macro')
-# linear_probe_batch_f1_weighted = f1_score(y_val_batch, y_val_pred_batch, average='weighted')
+y_val_pred_batch = linear_probe_batch.predict(X_val_batch)
+linear_probe_batch_accuracy = accuracy_score(y_val_batch, y_val_pred_batch)
+linear_probe_batch_f1_macro = f1_score(y_val_batch, y_val_pred_batch, average='macro')
+linear_probe_batch_f1_weighted = f1_score(y_val_batch, y_val_pred_batch, average='weighted')
 
-# print(f"Linear probe accuracy (batch): {linear_probe_batch_accuracy:.4f}")
-# print(f"Linear probe F1 score (macro, batch): {linear_probe_batch_f1_macro:.4f}")
-# print(f"Linear probe F1 score (weighted, batch): {linear_probe_batch_f1_weighted:.4f}")
+print(f"Linear probe accuracy (batch): {linear_probe_batch_accuracy:.4f}")
+print(f"Linear probe F1 score (macro, batch): {linear_probe_batch_f1_macro:.4f}")
+print(f"Linear probe F1 score (weighted, batch): {linear_probe_batch_f1_weighted:.4f}")
 
 
 print("Computing neighbors for ilisi calculation...")
@@ -374,58 +374,58 @@ print(f"  PCR batch score (1-PCR): {pcr_batch_score:.4f} (higher is better, orig
 
 
 
-# print(f"Adjusted Rand Index (ARI): {ari_score:.4f}")
-# print(f"Normalized Mutual Information (NMI): {nmi_score:.4f}")
-# print(f"Silhouette score: {silhouette_score:.4f}")
-# print(f"Silhouette batch score: {silhouette_batch_score:.4f}")
-# print(f"Mean silhouette per group: {mean_silhouette_per_group:.4f}")
-# print(f"Graph connectivity score: {graph_connectivity_score:.4f}")
-# print(f"Linear probe accuracy: {linear_probe_accuracy:.4f}")
-# print(f"Linear probe F1 score (macro): {linear_probe_f1_macro:.4f}")
-# print(f"Linear probe F1 score (weighted): {linear_probe_f1_weighted:.4f}")
-# print(f"Linear probe batch accuracy: {linear_probe_batch_accuracy:.4f}")
-# print(f"Linear probe batch F1 score (macro): {linear_probe_batch_f1_macro:.4f}")
-# print(f"Linear probe batch F1 score (weighted): {linear_probe_batch_f1_weighted:.4f}")
-# print(f"\nNumber of true cell types: {len(adata_tfidf.obs['cell_type'].unique())}")
-# print(f"Number of predicted clusters: {len(adata_tfidf.obs['leiden'].unique())}")
+print(f"Adjusted Rand Index (ARI): {ari_score:.4f}")
+print(f"Normalized Mutual Information (NMI): {nmi_score:.4f}")
+print(f"Silhouette score: {silhouette_score:.4f}")
+print(f"Silhouette batch score: {silhouette_batch_score:.4f}")
+print(f"Mean silhouette per group: {mean_silhouette_per_group:.4f}")
+print(f"Graph connectivity score: {graph_connectivity_score:.4f}")
+print(f"Linear probe accuracy: {linear_probe_accuracy:.4f}")
+print(f"Linear probe F1 score (macro): {linear_probe_f1_macro:.4f}")
+print(f"Linear probe F1 score (weighted): {linear_probe_f1_weighted:.4f}")
+print(f"Linear probe batch accuracy: {linear_probe_batch_accuracy:.4f}")
+print(f"Linear probe batch F1 score (macro): {linear_probe_batch_f1_macro:.4f}")
+print(f"Linear probe batch F1 score (weighted): {linear_probe_batch_f1_weighted:.4f}")
+print(f"\nNumber of true cell types: {len(adata_tfidf.obs['cell_type'].unique())}")
+print(f"Number of predicted clusters: {len(adata_tfidf.obs['leiden'].unique())}")
 print(f"ilisi score: {ilisi_score:.4f} (higher is better)")
 print(f"PCR batch score (1-PCR): {pcr_batch_score:.4f} (higher is better)")
 print(f"PCR batch score (raw): {pcr_batch_score_raw:.4f} (lower is better)")
 
-# results_df = pd.DataFrame({
-#     'Metric': [
-#         'Adjusted Rand Index', 
-#         'Normalized Mutual Information', 
-#         'Silhouette score', 
-#         'Silhouette batch score', 
-#         'Mean silhouette per group',
-#         'Cell type Linear probe accuracy',
-#         'Cell type Linear probe F1 score (macro)',
-#         'Cell type Linear probe F1 score (weighted)',
-#         'Batch label Linear probe accuracy',
-#         'Batch label Linear probe F1 score (macro)',
-#         'Batch label Linear probe F1 score (weighted)',
-#         'ilisi score',
-#         'PCR batch score (1-PCR)',
-#         'PCR batch score (raw)',
-#     ],
-#     'Value': [
-#         ari_score, 
-#         nmi_score, 
-#         silhouette_score, 
-#         silhouette_batch_score, 
-#         mean_silhouette_per_group,
-#         linear_probe_accuracy,
-#         linear_probe_f1_macro,
-#         linear_probe_f1_weighted,
-#         linear_probe_batch_accuracy,
-#         linear_probe_batch_f1_macro,
-#         linear_probe_batch_f1_weighted,
-#         ilisi_score,
-#         pcr_batch_score,
-#         pcr_batch_score_raw,
-#     ]
-# })
-# results_file = output_dir / 'results.csv'
-# results_df.to_csv(results_file, index=False)
-# print(f"\nResults saved to {results_file}")
+results_df = pd.DataFrame({
+    'Metric': [
+        'Adjusted Rand Index', 
+        'Normalized Mutual Information', 
+        'Silhouette score', 
+        'Silhouette batch score', 
+        'Mean silhouette per group',
+        'Cell type Linear probe accuracy',
+        'Cell type Linear probe F1 score (macro)',
+        'Cell type Linear probe F1 score (weighted)',
+        'Batch label Linear probe accuracy',
+        'Batch label Linear probe F1 score (macro)',
+        'Batch label Linear probe F1 score (weighted)',
+        'ilisi score',
+        'PCR batch score (1-PCR)',
+        'PCR batch score (raw)',
+    ],
+    'Value': [
+        ari_score, 
+        nmi_score, 
+        silhouette_score, 
+        silhouette_batch_score, 
+        mean_silhouette_per_group,
+        linear_probe_accuracy,
+        linear_probe_f1_macro,
+        linear_probe_f1_weighted,
+        linear_probe_batch_accuracy,
+        linear_probe_batch_f1_macro,
+        linear_probe_batch_f1_weighted,
+        ilisi_score,
+        pcr_batch_score,
+        pcr_batch_score_raw,
+    ]
+})
+results_file = output_dir / 'results.csv'
+results_df.to_csv(results_file, index=False)
+print(f"\nResults saved to {results_file}")
