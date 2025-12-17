@@ -379,14 +379,39 @@ def main(args):
                 tiers.append(2)
                 d_values.append(d_val)
 
-        # compute Spearman rank correlation
         rho, pval = spearmanr(tiers, d_values)
-
-        print(f"[BIO SCORE] Spearman correlation between tier and Cohen's d = {rho:.4f} (p={pval:.3g})")
-
+        print(f"[BIO SCORE (TIER)] Spearman correlation between tier and Cohen's d = {rho:.4f} (p={pval:.3g})")
         with open(os.path.join(args.output_dir, "biological_plausibility_score.txt"), "w") as f:
             f.write(f"Spearman correlation = {rho:.6f}, p={pval:.6g}\n")
+        
+        if "Pierce2021" in args.csv_path:
+            BIO_RANK = ['sgGATA1', 'sgCAD', 'sgRPL9', 'sgCDC5L', 'sgKLF1', 'sgNFE2', 'sgNRF1', 'sgARID2', 'sgGABPA', 'sgARID3A', 'sgZNF407', 'sgFOSL1', 'sgMAX', 'sgATF3', 'sgHSPA5', 'sgCTCF', 'sgGTF2B', 'sgMYC', 'sgHINFP', 'sgKLF16', 'sgNFYB', 'sgCUX1', 'sgTHAP1', 'sgZBTB11', 'sgPBX2', 'sgATF1', 'sgYY1', 'sgPOLR1D', 'sgBCLAF1', 'sgREST', 'sgZZZ3', 'sgCEBPB', 'sgTFDP1', 'sgTBP', 'sgBRF2', 'sgCEBPZ', 'sgSETDB1', 'sgZNF280A', 'sgTRIM28', 'sgELF1']
 
+            # Compute BIO SCORE using BIO_RANK
+            # Create mapping from gene name to rank (1-indexed: first gene = rank 1)
+            bio_rank_dict = {gene: rank + 1 for rank, gene in enumerate(BIO_RANK)}
+            
+            ranks = []
+            d_values_rank = []
+
+            for _, row in df_metrics.iterrows():
+                gene = row["gene"]  # keep "sg" prefix for BIO_RANK matching
+                d_val = row["cohens_d"]
+
+                if gene in bio_rank_dict:
+                    ranks.append(bio_rank_dict[gene])
+                    d_values_rank.append(d_val)
+                else:
+                    # Skip genes not in BIO_RANK for this metric
+                    continue
+
+            if len(ranks) > 0:
+                rho_rank, pval_rank = spearmanr(ranks, d_values_rank)
+                print(f"[BIO SCORE (RANK)] Spearman correlation between BIO_RANK and Cohen's d = {rho_rank:.4f} (p={pval_rank:.3g})")
+                with open(os.path.join(args.output_dir, "biological_plausibility_score_rank.txt"), "w") as f:
+                    f.write(f"Spearman correlation = {rho_rank:.6f}, p={pval_rank:.6g}\n")
+            else:
+                print("[WARN] No genes found in BIO_RANK for rank-based metric calculation.")
 
         # 6) Plot bar plot of Cohen's d for all genes
         print("[INFO] Creating bar plot of Cohen's d for all genes...")
