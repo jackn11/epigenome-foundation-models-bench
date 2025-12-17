@@ -1,2 +1,0 @@
-python zero_shot_batch_integration_metrics_chromfound.py --dataset_name Kanemaru2023_full --embeddings_path /scratch/wkim/project-2-team-1/ChromFound-Parallel/results-copy/chromfound/Kanemaru2023_full/merge10/embeddings_pca.h5ad
-python zero_shot_batch_integration_metrics_chromfound.py --dataset_name Li2023b_full --embeddings_path /scratch/wkim/project-2-team-1/ChromFound-Parallel/results-copy/chromfound/Li2023b_full/merge10/embeddings_pca.h5ad

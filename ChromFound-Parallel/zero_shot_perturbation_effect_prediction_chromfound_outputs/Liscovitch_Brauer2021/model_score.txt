@@ -1,1 +1,1 @@
-Weighted mean Cohen's d = 0.088575
+Weighted mean Cohen's d = 0.098580
