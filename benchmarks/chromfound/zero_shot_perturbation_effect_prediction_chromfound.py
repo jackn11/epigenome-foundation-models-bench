@@ -1,156 +1,83 @@
 import os
-import json
-import random
 import argparse
 import numpy as np
 import pandas as pd
-import torch
+import scanpy as sc
 import matplotlib.pyplot as plt
 from scipy.stats import spearmanr
 
-from tqdm import tqdm
 from sklearn.neighbors import NearestNeighbors
-import hdbscan
 
-from epiagent.model import EpiAgent
-from epiagent.dataset import CellDataset, collate_fn
-
-
-CONTROL_LABEL = "control"        # we already remapped sgsgNT -> control
+CONTROL_LABEL = "control"        # we will remap sgsgNT -> control
 UNK_LABEL = "UNK"                # will be dropped
-
-MAX_SEQ_LEN = 8192
-VOCAB_SIZE = 1355449
-NUM_LAYERS = 18
-EMBED_DIM = 512
-NUM_HEADS = 8
 
 K_NEIGHBORS = 20                # k for local neighborhood
 MIN_GENE_CELLS = 30             # skip genes with fewer cells
 
-SEED = 42
-random.seed(SEED)
-np.random.seed(SEED)
-torch.manual_seed(SEED)
-torch.cuda.manual_seed_all(SEED)
-
 def get_args_parser():
-    parser = argparse.ArgumentParser('Zero-shot perturbation effect prediction', add_help=False)
-    parser.add_argument('--csv_path',
-                        default='/scratch/wkim/project-2-team-1/EpiAgent/external_data/GSE168851_crispr_perturb/All_data_SpearATAC_K562_LargeScreen.csv', type=str)
+    parser = argparse.ArgumentParser('Zero-shot perturbation effect prediction with ChromFound embeddings', add_help=False)
+    parser.add_argument('--h5ad_path',
+                        default='/scratch/wkim/project-2-team-1/benchmarks/results/chromfound/Pierce2021/merge10/embeddings_pca.h5ad', 
+                        type=str,
+                        help='Path to h5ad file with embeddings')
     parser.add_argument('--genes_of_interest',
                         default=['sgGATA1', 'sgMAX', 'sgYY1'],
                         nargs='+',
-                        type=str,)
-    parser.add_argument('--output_dir', default='./zeroshot_perturbation_effect_prediction_CohensD_outputs', type=str)
-    parser.add_argument('--cache_dir', default='/path/to/embeddings/cache', type=str)
-    parser.add_argument('--pretrained_model_path', default='/scratch/wkim/project-2-team-1/EpiAgent/model/pretrained_EpiAgent.pth', type=str)
+                        type=str,
+                        help='List of genes to analyze (with sg prefix)')
+    parser.add_argument('--output_dir', 
+                        default='./chromfound_zeroshot_perturbation_effect_prediction_CohensD_outputs', 
+                        type=str,
+                        help='Directory to save outputs')
+    parser.add_argument('--use_hdbscan_filter',
+                        action='store_true',
+                        help='Apply HDBSCAN filtering to keep main cluster')
     return parser
 
 
-def load_metadata_and_cell_indices(csv_path):
-    print(f"[INFO] Loading CSV from {csv_path}")
-    df = pd.read_csv(csv_path, usecols=["cell_indices", "perturbation"])
-
-    # map sgsgNT -> control, drop UNK and NaNs
-    df.loc[df["perturbation"] == "sgsgNT", "perturbation"] = CONTROL_LABEL
-    df = df[df["perturbation"] != UNK_LABEL].reset_index(drop=True)
-    df = df.dropna(subset=["perturbation"]).reset_index(drop=True)
-
-    print("[INFO] Parsing cell_indices...")
-    cell_indices_list = [json.loads(s) for s in tqdm(df["cell_indices"].tolist())]
-    perturbations = df["perturbation"].values
-
-    print(f"[INFO] Loaded {len(df)} cells.")
-    print(f"[INFO] Unique perturbations: {np.unique(perturbations)}")
-    return cell_indices_list, perturbations
-
-def build_epigagent_and_embed(args, cell_indices_list, device="cuda"):
-    print("[INFO] Initializing EpiAgent...")
-    model = EpiAgent(
-        vocab_size=VOCAB_SIZE,
-        num_layers=NUM_LAYERS,
-        embedding_dim=EMBED_DIM,
-        num_attention_heads=NUM_HEADS,
-        max_rank_embeddings=MAX_SEQ_LEN,
-        use_flash_attn=True,
-        pos_weight_for_RLM=torch.tensor(1.0),
-        pos_weight_for_CCA=torch.tensor(1.0),
-    )
-
-    print(f"[INFO] Loading pretrained weights from {args.pretrained_model_path}")
-    state_dict = torch.load(args.pretrained_model_path, map_location="cpu")
-    model.load_state_dict(state_dict)
-
-    device = torch.device(device if torch.cuda.is_available() else "cpu")
-    model.to(device)
-    model.eval()
-
-    dataset = CellDataset(cell_indices_list, MAX_SEQ_LEN, True)
-    dataloader = torch.utils.data.DataLoader(
-        dataset,
-        batch_size=64,
-        shuffle=False,
-        num_workers=4,
-        collate_fn=collate_fn,
-    )
-
-    all_embeddings = []
-    print("[INFO] Computing embeddings with EpiAgent...")
-    with torch.no_grad():
-        for batch in tqdm(dataloader):
-            input_ids = batch.to(device)
-            with torch.cuda.amp.autocast(dtype=torch.float16):
-                outputs = model(input_ids)
-                emb = outputs["transformer_outputs"][:, 0, :]  # (B, 512)
-            all_embeddings.append(emb.float().cpu().numpy())
-
-    embeddings = np.concatenate(all_embeddings, axis=0)
-    print(f"[INFO] Embeddings shape: {embeddings.shape}")
-    return embeddings
-
-def get_or_compute_embeddings(args, cell_indices_list, perturbations, device="cuda"):
+def load_embeddings_and_labels(h5ad_path):
     """
-    If cached embeddings exist, load and return them.
-    Otherwise, compute embeddings with EpiAgent, save to disk, and return.
-
-    We cache embeddings BEFORE HDBSCAN filtering. HDBSCAN is cheap
-    compared to the forward pass, so we rerun it each time.
+    Load ChromFound embeddings and perturbation labels from h5ad file.
     """
-    # If cache exists, load and sanity-check shapes
-    embedding_cache_path = os.path.join(args.cache_dir, "cell_embeddings.npy")
-    perturbation_cache_path = os.path.join(args.cache_dir, "perturbations.npy")
-    if os.path.exists(embedding_cache_path) and os.path.exists(perturbation_cache_path):
-        print(f"[INFO] Loading cached embeddings from {embedding_cache_path}")
-        cached_embeddings = np.load(embedding_cache_path)
-        cached_perts = np.load(perturbation_cache_path, allow_pickle=True)
-
-        if cached_embeddings.shape[0] != len(perturbations):
-            print("[WARN] Cached embeddings shape does not match current "
-                  "number of cells; recomputing embeddings.")
-        elif not np.array_equal(cached_perts, perturbations):
-            print("[WARN] Cached perturbation labels do not match current "
-                  "labels; recomputing embeddings.")
-        else:
-            print("[INFO] Loaded cached embeddings successfully.")
-            return cached_embeddings, cached_perts
-
-    # Otherwise compute from scratch
-    print("[INFO] No valid cache found; computing embeddings with EpiAgent...")
-    embeddings = build_epigagent_and_embed(args, cell_indices_list, device=device)
-
-    # Save cache
-    np.save(embedding_cache_path, embeddings)
-    np.save(perturbation_cache_path, np.asarray(perturbations, dtype=str))
-    print(f"[INFO] Saved embeddings cache to {embedding_cache_path}")
-    print(f"[INFO] Saved perturbation labels cache to {perturbation_cache_path}")
-
+    print(f"[INFO] Loading h5ad file from {h5ad_path}")
+    adata = sc.read_h5ad(h5ad_path)
+    
+    # Extract embeddings from obsm
+    if 'X_pca' not in adata.obsm:
+        raise ValueError("No 'X_pca' found in adata.obsm. Check your h5ad file.")
+    
+    embeddings = adata.obsm['X_pca']
+    print(f"[INFO] Loaded embeddings with shape: {embeddings.shape}")
+    
+    # Extract perturbations from obs
+    if 'celltype' not in adata.obs.columns:
+        raise ValueError("No 'celltype' column found in adata.obs. Check your h5ad file.")
+    
+    perturbations = adata.obs['celltype'].values
+    print(f"[INFO] Loaded {len(perturbations)} cell perturbation labels")
+    
+    # Map sgsgNT -> control, drop UNK and NaNs
+    print(f"[INFO] Original unique perturbations: {np.unique(perturbations)}")
+    
+    # Create a mask for filtering
+    keep_mask = (perturbations != UNK_LABEL)
+    embeddings = embeddings[keep_mask]
+    perturbations = perturbations[keep_mask]
+    
+    # Remap sgsgNT to control
+    perturbations = np.array([CONTROL_LABEL if p == "sgsgNT" else p for p in perturbations])
+    
+    print(f"[INFO] After filtering: {len(perturbations)} cells")
+    print(f"[INFO] Unique perturbations after mapping: {np.unique(perturbations)}")
+    
     return embeddings, perturbations
+
 
 def hdbscan_filter_main_cluster(embeddings, perturbations):
     """
     Run HDBSCAN and keep only the largest non-noise cluster.
     """
+    import hdbscan
     print("[INFO] Running HDBSCAN to identify major cluster...")
     clusterer = hdbscan.HDBSCAN(
         min_cluster_size=200,
@@ -182,6 +109,7 @@ def hdbscan_filter_main_cluster(embeddings, perturbations):
     print(f"[INFO] Unique perturbations after filtering: {np.unique(pert_filt)}")
     return emb_filt, pert_filt
 
+
 def compute_local_knn_dists(embeddings, perturbations, gene, k_neighbors=20):
     """
     For a given gene, compute:
@@ -196,7 +124,7 @@ def compute_local_knn_dists(embeddings, perturbations, gene, k_neighbors=20):
 
     if len(gene_idx) < MIN_GENE_CELLS:
         print(f"[WARN] {gene}: only {len(gene_idx)} cells (< {MIN_GENE_CELLS}), skipping.")
-        return None, None
+        return None, None, None, None
 
     emb_ctrl = embeddings[ctrl_idx]
     emb_gene = embeddings[gene_idx]
@@ -217,8 +145,9 @@ def compute_local_knn_dists(embeddings, perturbations, gene, k_neighbors=20):
 
     return baseline_dists, gene_dists, len(ctrl_idx), len(gene_idx)
 
+
 def summarize_and_plot_local_deviation(
-    gene, baseline_dists, gene_dists, n_ctrl, n_gene, out_dir
+    gene, baseline_dists, gene_dists, n_ctrl, n_gene, out_dir, embedding_dim=50
 ):
     """
     Save metrics + histogram visualization for one gene.
@@ -267,7 +196,7 @@ def summarize_and_plot_local_deviation(
     ax.axvline(mean_ctrl, color="blue", linestyle="--", label=f"ctrl mean={mean_ctrl:.4f}")
     ax.axvline(mean_gene, color="red", linestyle="--", label=f"{gene} mean={mean_gene:.4f}")
 
-    ax.set_title(f"Local k-NN distance to control manifold in 512D: {gene}")
+    ax.set_title(f"Local k-NN distance to control manifold (ChromFound {embedding_dim}D): {gene}")
     ax.set_xlabel(f"Mean distance to {K_NEIGHBORS} nearest controls (L2)")
     ax.set_ylabel("Density")
     ax.legend(fontsize=8)
@@ -299,25 +228,24 @@ def summarize_and_plot_local_deviation(
 
 
 def main(args):
-    # 1) Load metadata
-    cell_indices_list, perturbations = load_metadata_and_cell_indices(args.csv_path)
+    # 1) Load embeddings and labels from h5ad
+    embeddings, perturbations = load_embeddings_and_labels(args.h5ad_path)
 
-    # 2) Get or compute EpiAgent embeddings (with caching)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    embeddings, perturbations = get_or_compute_embeddings(args, cell_indices_list, perturbations, device=device)
+    # 2) Optional HDBSCAN filter to main cluster
+    if args.use_hdbscan_filter:
+        embeddings, perturbations = hdbscan_filter_main_cluster(embeddings, perturbations)
 
-    # 3) HDBSCAN filter to main cluster
-    # embeddings, perturbations = hdbscan_filter_main_cluster(embeddings, perturbations)
-
-    # 4) Compute metrics per gene
+    # 3) Compute metrics per gene
     all_metrics = []
 
     unique_perts = np.unique(perturbations)
-    print(f"[INFO] Unique perturbations after filter: {unique_perts}")
+    print(f"[INFO] Unique perturbations available: {unique_perts}")
 
+    embedding_dim = embeddings.shape[1]
+    
     for gene in args.genes_of_interest:
         if gene not in unique_perts:
-            print(f"[WARN] {gene} not found after filtering; skipping.")
+            print(f"[WARN] {gene} not found in data; skipping.")
             continue
 
         baseline_dists, gene_dists, n_ctrl, n_gene = compute_local_knn_dists(
@@ -327,11 +255,11 @@ def main(args):
             continue
 
         metrics = summarize_and_plot_local_deviation(
-            gene, baseline_dists, gene_dists, n_ctrl, n_gene, args.output_dir
+            gene, baseline_dists, gene_dists, n_ctrl, n_gene, args.output_dir, embedding_dim
         )
         all_metrics.append(metrics)
 
-    # 5) Save metrics table
+    # 4) Save metrics table
     if all_metrics:
         df_metrics = pd.DataFrame(all_metrics)
         csv_path = os.path.join(args.output_dir, "local_neighborhood_metrics.csv")
@@ -347,8 +275,7 @@ def main(args):
         with open(os.path.join(args.output_dir, "model_score.txt"), "w") as f:
             f.write(f"Weighted mean Cohen's d = {weighted_mean_d:.6f}\n")
 
-        
-        # biological tier mapping
+        # Biological tier mapping
         BIO_TIER = {
             "GATA1": 1, "GATA2": 1,
             "CEBPB": 1, "CEBPZ": 1,
@@ -380,12 +307,15 @@ def main(args):
                 tiers.append(2)
                 d_values.append(d_val)
 
+        # compute Spearman rank correlation
         rho, pval = spearmanr(tiers, d_values)
+
         print(f"[BIO SCORE (TIER)] Spearman correlation between tier and Cohen's d = {rho:.4f} (p={pval:.3g})")
+
         with open(os.path.join(args.output_dir, "biological_plausibility_score.txt"), "w") as f:
             f.write(f"Spearman correlation = {rho:.6f}, p={pval:.6g}\n")
-        
-        if "Pierce2021" in args.csv_path:
+
+        if "Pierce2021" in args.h5ad_path:
             BIO_RANK = ['sgGATA1', 'sgCAD', 'sgRPL9', 'sgCDC5L', 'sgKLF1', 'sgNFE2', 'sgNRF1', 'sgARID2', 'sgGABPA', 'sgARID3A', 'sgZNF407', 'sgFOSL1', 'sgMAX', 'sgATF3', 'sgHSPA5', 'sgCTCF', 'sgGTF2B', 'sgMYC', 'sgHINFP', 'sgKLF16', 'sgNFYB', 'sgCUX1', 'sgTHAP1', 'sgZBTB11', 'sgPBX2', 'sgATF1', 'sgYY1', 'sgPOLR1D', 'sgBCLAF1', 'sgREST', 'sgZZZ3', 'sgCEBPB', 'sgTFDP1', 'sgTBP', 'sgBRF2', 'sgCEBPZ', 'sgSETDB1', 'sgZNF280A', 'sgTRIM28', 'sgELF1']
 
             # Compute BIO SCORE using BIO_RANK
@@ -414,7 +344,7 @@ def main(args):
             else:
                 print("[WARN] No genes found in BIO_RANK for rank-based metric calculation.")
 
-        # 6) Plot bar plot of Cohen's d for all genes
+        # 5) Plot bar plot of Cohen's d for all genes
         print("[INFO] Creating bar plot of Cohen's d for all genes...")
         fig, ax = plt.subplots(figsize=(14, 6))
         
@@ -435,7 +365,7 @@ def main(args):
         
         ax.set_xlabel('Gene', fontsize=12)
         ax.set_ylabel("Cohen's d", fontsize=12)
-        ax.set_title("Local Neighborhood Deviation Metric (Cohen's d) for All Genes", fontsize=14)
+        ax.set_title("ChromFound: Local Neighborhood Deviation Metric (Cohen's d) for All Genes", fontsize=14)
         ax.set_xticks(range(len(genes)))
         ax.set_xticklabels(genes, rotation=45, ha='right', fontsize=9)
         ax.axhline(y=0, color='black', linestyle='-', linewidth=0.5)
@@ -447,11 +377,11 @@ def main(args):
         plt.close(fig)
         print(f"[INFO] Saved bar plot to {bar_plot_path}")
     else:
-        print("[WARN] No metrics computed (check GENES_OF_INTEREST).")
+        print("[WARN] No metrics computed (check genes_of_interest).")
 
 
 if __name__ == "__main__":
     args = get_args_parser().parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
-    os.makedirs(args.cache_dir, exist_ok=True)
     main(args)
+
