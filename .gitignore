@@ -10,6 +10,9 @@ EpiAgent/external_data/*
 
 **/wandb/
 
+benchmarks/epiagent/cache/
+benchmarks/epiagent/saved_embeddings
+
 ChromFound-Parallel/sample_data/PBMC169K/cell_embedding/embeddings.h5ad
 ChromFound-Parallel/sample_data/PBMC169K/cell_embedding/log_split_0.txt
 ChromFound-Parallel/sample_data/PBMC169K/cell_embedding/log_split_1.txt

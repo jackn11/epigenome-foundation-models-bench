@@ -23,6 +23,12 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 from scib.metrics import silhouette, silhouette_batch
 import pandas as pd
+import sys
+from pathlib import Path
+
+# Add project root to path to allow importing benchmarks module
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 from benchmarks.benchmark_utils import prepare_img, find_leiden_resolution_for_n_clusters
 
@@ -142,7 +148,6 @@ plt.close(fig)
 print("UMAP visualization saved")
 
 # Plot UMAP with batch labels if batch key exists
-import ipdb; ipdb.set_trace()
 if args.batch_key is not None and args.batch_key in adata_tfidf.obs.columns:
     fig = sc.pl.umap(adata_tfidf, color=args.batch_key, return_fig=True, show=True, title='Cell embeddings (batch labels)')
     if fig is not None:

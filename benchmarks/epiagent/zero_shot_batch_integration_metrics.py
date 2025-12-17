@@ -10,6 +10,15 @@ import pandas as pd
 from scipy import sparse
 from joblib import Parallel, delayed
 from tqdm import tqdm
+import sys
+
+# Add EpiAgent directory to path to allow importing epiagent module
+project_root = Path(__file__).parent.parent.parent
+epiagent_path = project_root / 'EpiAgent'
+sys.path.insert(0, str(epiagent_path))
+
+from epiagent.tokenization import tokenization
+from epiagent.preprocessing import global_TFIDF
 
 SEED = 42
 random.seed(SEED)
@@ -120,100 +129,90 @@ def get_args_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_name', 
                         type=str, 
-                        default='Kanemaru2023_full',
-                        choices=['Kanemaru2023_full', 'Li2023b_full'],
+                        default='Li2023b',
+                        choices=['Li2023b', 'Buenrostro2018', 'Kanemaru2023'],
                         help='Dataset name')
-    parser.add_argument('--embeddings_path', 
-                        type=str, 
-                        default=None,
-                        help='Path to ChromFound embeddings h5ad file (required)')
     parser.add_argument('--batch_key', 
                         type=str, 
-                        default="Batch (HSC)",
-                        help='Batch key column name in obs (optional, will try to detect if not provided)')
+                        default='Batch (HSC)',
+                        help='Batch key column name in obs')
+    parser.add_argument('--root', 
+                        type=str, 
+                        default='/scratch/naimer/github/project-2-team-1/EpiAgent/data',
+                        help='Root directory for datasets')
     parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--n_cores', type=int, default=1, help='Number of cores for parallel processing')
     return parser
+
 
 parser = get_args_parser()
 args = parser.parse_args()
 
-assert args.embeddings_path is not None, "Embeddings path is required"
-embeddings_path = Path(args.embeddings_path)
+root = Path(args.root)
 
-# Load ChromFound embeddings
-print(f"Loading ChromFound embeddings from {embeddings_path}...")
-adata = sc.read_h5ad(embeddings_path)
-
-# Extract embeddings from obsm (different datasets use different keys)
-embedding_key_map = {
-    'Kanemaru2023_full': 'X_pca',
-    'Li2023b_full': 'X_pca',
-}
-
-if args.dataset_name in embedding_key_map:
-    embedding_key = embedding_key_map[args.dataset_name]
+# Load the original dataset to get metadata
+print("Loading the dataset...")
+if args.dataset_name == 'Li2023b':
+    input_path = root / 'Li2023b' / 'Li2023b-brain_tissue' / 'Li2023b-brain_tissue-cell_by_cCRE.h5ad'
+elif args.dataset_name == 'Buenrostro2018':
+    input_path = root / 'Buenrostro2018' / 'Buenrostro2018-bone_marrow_tissue' / 'Buenrostro2018-bone_marrow_tissue-cell_by_cCRE.h5ad'
+elif args.dataset_name == 'Kanemaru2023':
+    input_path = root / 'Kanemaru2023' / 'Kanemaru2023-cardiac_tissue' / 'Kanemaru2023-cardiac_tissue-cell_by_cCRE.h5ad'
 else:
-    # Try common keys
-    embedding_key = None
-    for key in ['X_pca', 'X_embedding']:
-        if key in adata.obsm:
-            embedding_key = key
-            break
+    raise ValueError(f"Dataset {args.dataset_name} not supported")
 
-if embedding_key is None or embedding_key not in adata.obsm:
-    available_keys = list(adata.obsm.keys())
-    raise ValueError(f"No suitable embedding key found in adata.obsm. Available keys: {available_keys}")
+adata = sc.read_h5ad(input_path)
 
-cell_embeddings = adata.obsm[embedding_key]
-print(f"Loaded embeddings from '{embedding_key}' with shape: {cell_embeddings.shape}")
+# Load cached tokenized data or create it
+cache_dir = Path('./cache')
+cache_dir.mkdir(exist_ok=True)
+cached_tokenized_path = cache_dir / f'{args.dataset_name}_tokenized.h5ad'
+
+if cached_tokenized_path.exists():
+    print(f"Loading cached tokenized data from {cached_tokenized_path}...")
+    adata_tfidf = sc.read_h5ad(cached_tokenized_path)
+    print("Cached tokenized data loaded successfully.")
+else:
+    print("No cached tokenized data found. Computing from scratch...")
+    cCRE_document_frequency = np.load(root / 'cCRE_document_frequency.npy')
+    adata_tfidf = global_TFIDF(adata, cCRE_document_frequency)
+    
+    print("Performing tokenization... (this takes a while)")
+    tokenization(adata_tfidf)
+    
+    print(f"Saving tokenized data to {cached_tokenized_path}...")
+    adata_tfidf.write(cached_tokenized_path)
+    print("Tokenized data saved successfully.")
+
+# Load EpiAgent embeddings from saved file
+embedding_save_path = f'./saved_embeddings/{args.dataset_name}/{args.dataset_name}-cell_embeddings.npy'
+
+if not os.path.exists(embedding_save_path):
+    raise FileNotFoundError(
+        f"Embeddings file not found at {embedding_save_path}. "
+        f"Please run zero_shot_feature_extraction_noshuffle.py first to generate the embeddings."
+    )
+
+print(f"Loading saved cell embeddings from {embedding_save_path}...")
+cell_embeddings = np.load(embedding_save_path)
+print(f"Cell embeddings loaded successfully with shape: {cell_embeddings.shape}")
 
 # Assign embeddings to the AnnData object
-adata.obsm['cell_embeddings_zero_shot'] = cell_embeddings
+adata_tfidf.obsm['cell_embeddings_zero_shot'] = cell_embeddings
 
-# Set default batch key based on dataset if not provided
-if args.batch_key is None:
-    # Set default batch keys for each dataset
-    default_batch_keys = {
-        'Kanemaru2023_downsampled': 'batch_key',
-        'Buenrostro2018-bone_marrow_tissue': 'Batch (HSC)',
-        'Li2023b_downsampled': 'Batch (HSC)'
-    }
-    if args.dataset_name in default_batch_keys:
-        default_key = default_batch_keys[args.dataset_name]
-        if default_key in adata.obs.columns:
-            args.batch_key = default_key
-            print(f"Using default batch key for {args.dataset_name}: {args.batch_key}")
-        else:
-            print(f"Warning: Default batch key '{default_key}' not found for {args.dataset_name}.")
-            args.batch_key = None
-    else:
-        args.batch_key = None
+# Verify batch key exists
+if args.batch_key not in adata_tfidf.obs.columns:
+    raise ValueError(
+        f"Specified batch key '{args.batch_key}' not found in obs columns. "
+        f"Available columns: {list(adata_tfidf.obs.columns)}"
+    )
 
-# If still None, try to detect batch key
-if args.batch_key is None:
-    # Common batch key names to check
-    possible_batch_keys = ['batch', 'Batch', 'batch_key', 'Batch (HSC)', 'sample', 'Sample']
-    batch_key = None
-    for key in possible_batch_keys:
-        if key in adata.obs.columns:
-            batch_key = key
-            print(f"Detected batch key: {batch_key}")
-            break
-    
-    if batch_key is None:
-        raise ValueError("No batch key found. Batch integration metrics require a batch key.")
-        print(f"Available columns: {list(adata.obs.columns)}")
-    else:
-        args.batch_key = batch_key
-else:
-    if args.batch_key not in adata.obs.columns:
-        raise ValueError(f"Specified batch key '{args.batch_key}' not found in obs columns.")
-        print(f"Available columns: {list(adata.obs.columns)}")
+print(f"Using batch key: {args.batch_key}")
 
 # Compute neighbors (required for ilisi_graph)
 print("Computing neighbors for ilisi calculation...")
-sc.pp.neighbors(adata, use_rep='cell_embeddings_zero_shot')
-print(f"Neighbors computed for {adata.n_obs} cells")
+sc.pp.neighbors(adata_tfidf, use_rep='cell_embeddings_zero_shot')
+print(f"Neighbors computed for {adata_tfidf.n_obs} cells")
 
 # Calculate batch integration metrics (ilisi, pcr_batch)
 print("Calculating batch integration metrics...")
@@ -221,26 +220,27 @@ print("Calculating batch integration metrics...")
 # Calculate ilisi (Integration Local Inverse Simpson's Index)
 # Higher is better (more batch mixing)
 print("  Calculating ilisi...")
-# ilisi_score = ilisi_graph(adata, batch_key=args.batch_key, type_='embed', use_rep='cell_embeddings_zero_shot', n_cores=128)
 ilisi_score = ilisi_graph_custom(
-    adata,
+    adata_tfidf,
     batch_key=args.batch_key,
-    # n_cores=128,
+    n_cores=args.n_cores,
     subsample=None,          # set e.g. 50000 for speed on huge datasets
     random_state=args.seed,
     exclude_self=True,
 )
+print(f"ilisi score: {ilisi_score:.4f} (higher is better)")
+
 # Calculate PCR batch (Principal Component Regression)
 # Lower is better (less batch effect), so we'll store 1-pcr for "higher is better" interpretation
 print("  Calculating PCR batch...")
-pcr_batch_score_raw = pcr(adata, covariate=args.batch_key, embed='cell_embeddings_zero_shot', recompute_pca=True)
+pcr_batch_score_raw = pcr(adata_tfidf, covariate=args.batch_key, embed='cell_embeddings_zero_shot', recompute_pca=True)
 pcr_batch_score = 1 - pcr_batch_score_raw  # Invert so higher is better
 
 print(f"  ilisi score: {ilisi_score:.4f} (higher is better)")
 print(f"  PCR batch score (1-PCR): {pcr_batch_score:.4f} (higher is better, original PCR: {pcr_batch_score_raw:.4f})")
 
 # Save results to CSV
-output_dir = Path(f'./zero_shot_batch_integration_metrics_chromfound_{args.dataset_name}')
+output_dir = Path(f'./zero_shot_batch_integration_metrics_epiagent_{args.dataset_name}')
 output_dir.mkdir(exist_ok=True)
 
 results_data = {
