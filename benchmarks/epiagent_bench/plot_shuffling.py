@@ -89,14 +89,15 @@ for i, condition in enumerate(conditions):
     ax1.bar(x + i*width, nmi_values, width, label=condition.replace("-", " ").title(), 
             color=colors[condition], alpha=0.8, edgecolor='black', linewidth=0.5)
 
-ax1.set_xlabel('Dataset', fontsize=11, fontweight='bold')
-ax1.set_ylabel('Normalized Mutual Information (NMI)', fontsize=11, fontweight='bold')
-ax1.set_title('NMI Comparison Across Datasets and Conditions', fontsize=12, fontweight='bold')
+# ax1.set_xlabel('Dataset', fontsize=11, fontweight='bold')
+# ax1.set_ylabel('Normalized Mutual Information (NMI)', fontsize=14, fontweight='bold')
+# ax1.set_title('NMI Comparison Across Datasets and Conditions', fontsize=12, fontweight='bold')
 ax1.set_xticks(x + width)
-ax1.set_xticklabels(datasets, rotation=0)
+ax1.set_xticklabels(datasets, rotation=0, fontsize=14)
 ax1.set_ylim([0, 1.0])
+ax1.tick_params(axis='y', labelsize=14)
 ax1.grid(axis='y', alpha=0.3, linestyle='--')
-ax1.legend(loc='upper right', framealpha=0.9)
+# ax1.legend(loc='upper right', framealpha=0.9, fontsize=12)
 ax1.axhline(y=0.5, color='gray', linestyle=':', alpha=0.5, linewidth=1)
 
 plt.tight_layout()
@@ -109,57 +110,58 @@ for i, condition in enumerate(conditions):
     ax2.bar(x + i*width, ari_values, width, label=condition.replace("-", " ").title(), 
             color=colors[condition], alpha=0.8, edgecolor='black', linewidth=0.5)
 
-ax2.set_xlabel('Dataset', fontsize=11, fontweight='bold')
-ax2.set_ylabel('Adjusted Rand Index (ARI)', fontsize=11, fontweight='bold')
-ax2.set_title('ARI Comparison Across Datasets and Conditions', fontsize=12, fontweight='bold')
+# ax2.set_xlabel('Dataset', fontsize=14, fontweight='bold')
+# ax2.set_ylabel('Adjusted Rand Index (ARI)', fontsize=14, fontweight='bold')
+# ax2.set_title('ARI Comparison Across Datasets and Conditions', fontsize=12, fontweight='bold')
 ax2.set_xticks(x + width)
-ax2.set_xticklabels(datasets, rotation=0)
+ax2.set_xticklabels(datasets, rotation=0, fontsize=14)
 ax2.set_ylim([0, 1.0])
+ax2.tick_params(axis='y', labelsize=14)
 ax2.grid(axis='y', alpha=0.3, linestyle='--')
-ax2.legend(loc='upper right', framealpha=0.9)
+# ax2.legend(loc='upper right', framealpha=0.9, fontsize=12)
 ax2.axhline(y=0.5, color='gray', linestyle=':', alpha=0.5, linewidth=1)
 
 plt.tight_layout()
 plt.savefig(os.path.join(FIGURES_DIR, 'ari_comparison.png'), dpi=300, bbox_inches='tight')
 plt.close()
 
-fig3, ax3 = plt.subplots(figsize=(8, 6))
-for i, condition in enumerate(conditions):
-    asw_values = [data[dataset][condition]["ASW"] for dataset in datasets]
-    ax3.bar(x + i*width, asw_values, width, label=condition.replace("-", " ").title(), 
-            color=colors[condition], alpha=0.8, edgecolor='black', linewidth=0.5)
+# fig3, ax3 = plt.subplots(figsize=(8, 6))
+# for i, condition in enumerate(conditions):
+#     asw_values = [data[dataset][condition]["ASW"] for dataset in datasets]
+#     ax3.bar(x + i*width, asw_values, width, label=condition.replace("-", " ").title(), 
+#             color=colors[condition], alpha=0.8, edgecolor='black', linewidth=0.5)
 
-ax3.set_xlabel('Dataset', fontsize=11, fontweight='bold')
-ax3.set_ylabel('Average Silhouette Width (ASW)', fontsize=11, fontweight='bold')
-ax3.set_title('ASW Comparison Across Datasets and Conditions', fontsize=12, fontweight='bold')
-ax3.set_xticks(x + width)
-ax3.set_xticklabels(datasets, rotation=0)
-ax3.set_ylim([0, 1.0])
-ax3.grid(axis='y', alpha=0.3, linestyle='--')
-# Add reference line at 0.5 (expected value for random assignment)
-ax3.axhline(y=0.5, color='red', linestyle='--', alpha=0.7, linewidth=1.5, label='Baseline')
-ax3.legend(loc='upper right', framealpha=0.9)
+# ax3.set_xlabel('Dataset', fontsize=11, fontweight='bold')
+# ax3.set_ylabel('Average Silhouette Width (ASW)', fontsize=11, fontweight='bold')
+# ax3.set_title('ASW Comparison Across Datasets and Conditions', fontsize=12, fontweight='bold')
+# ax3.set_xticks(x + width)
+# ax3.set_xticklabels(datasets, rotation=0)
+# ax3.set_ylim([0, 1.0])
+# ax3.grid(axis='y', alpha=0.3, linestyle='--')
+# # Add reference line at 0.5 (expected value for random assignment)
+# ax3.axhline(y=0.5, color='red', linestyle='--', alpha=0.7, linewidth=1.5, label='Baseline')
+# ax3.legend(loc='upper right', framealpha=0.9)
 
-plt.tight_layout()
-plt.savefig(os.path.join(FIGURES_DIR, 'asw_comparison.png'), dpi=300, bbox_inches='tight')
-plt.close()
+# plt.tight_layout()
+# plt.savefig(os.path.join(FIGURES_DIR, 'asw_comparison.png'), dpi=300, bbox_inches='tight')
+# plt.close()
 
-fig4, ax4 = plt.subplots(figsize=(8, 6))
-for i, condition in enumerate(conditions):
-    asw_batch_values = [data[dataset][condition]["ASW_batch"] for dataset in datasets]
-    ax4.bar(x + i*width, asw_batch_values, width, label=condition.replace("-", " ").title(), 
-            color=colors[condition], alpha=0.8, edgecolor='black', linewidth=0.5)
+# fig4, ax4 = plt.subplots(figsize=(8, 6))
+# for i, condition in enumerate(conditions):
+#     asw_batch_values = [data[dataset][condition]["ASW_batch"] for dataset in datasets]
+#     ax4.bar(x + i*width, asw_batch_values, width, label=condition.replace("-", " ").title(), 
+#             color=colors[condition], alpha=0.8, edgecolor='black', linewidth=0.5)
 
-ax4.set_xlabel('Dataset', fontsize=11, fontweight='bold')
-ax4.set_ylabel('Average Silhouette Width Batch (ASW_batch)', fontsize=11, fontweight='bold')
-ax4.set_title('ASW_batch Comparison Across Datasets and Conditions', fontsize=12, fontweight='bold')
-ax4.set_xticks(x + width)
-ax4.set_xticklabels(datasets, rotation=0)
-ax4.set_ylim([0, 1.0])
-ax4.grid(axis='y', alpha=0.3, linestyle='--')
-ax4.legend(loc='upper right', framealpha=0.9)
-ax4.axhline(y=0.5, color='gray', linestyle=':', alpha=0.5, linewidth=1)
+# ax4.set_xlabel('Dataset', fontsize=11, fontweight='bold')
+# ax4.set_ylabel('Average Silhouette Width Batch (ASW_batch)', fontsize=11, fontweight='bold')
+# ax4.set_title('ASW_batch Comparison Across Datasets and Conditions', fontsize=12, fontweight='bold')
+# ax4.set_xticks(x + width)
+# ax4.set_xticklabels(datasets, rotation=0)
+# ax4.set_ylim([0, 1.0])
+# ax4.grid(axis='y', alpha=0.3, linestyle='--')
+# ax4.legend(loc='upper right', framealpha=0.9)
+# ax4.axhline(y=0.5, color='gray', linestyle=':', alpha=0.5, linewidth=1)
 
-plt.tight_layout()
-plt.savefig(os.path.join(FIGURES_DIR, 'asw_batch_comparison.png'), dpi=300, bbox_inches='tight')
-plt.close()
+# plt.tight_layout()
+# plt.savefig(os.path.join(FIGURES_DIR, 'asw_batch_comparison.png'), dpi=300, bbox_inches='tight')
+# plt.close()

@@ -397,9 +397,10 @@ def main(args):
         
         ax.set_xlabel('Gene', fontsize=12)
         ax.set_ylabel("Cohen's d", fontsize=12)
+        ax.set_ylim([-0.5, 3.5])
         ax.set_title("Local Neighborhood Deviation Metric (Cohen's d) for All Genes", fontsize=14)
         ax.set_xticks(range(len(genes)))
-        ax.set_xticklabels(genes, rotation=45, ha='right', fontsize=9)
+        ax.set_xticklabels(genes, rotation=45, ha='right', fontsize=10)
         ax.axhline(y=0, color='black', linestyle='-', linewidth=0.5)
         ax.grid(axis='y', alpha=0.3, linestyle='--')
         

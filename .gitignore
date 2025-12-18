@@ -32,6 +32,7 @@ EpiAgent/epiagent.egg-info/*
 benchmarks/data/Kanemaru2023_chromfound_preprocessed.h5ad
 benchmarks/data/Kanemaru2023_downsampled_10000_cells.h5ad
 benchmarks/results/
+benchmarks/*.png
 
 EpiAgent/benchmarks/plots/*
 benchmarks/data/Kanemaru2023_chromfound_preprocessed_merge1.h5ad

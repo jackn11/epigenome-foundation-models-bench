@@ -9,10 +9,10 @@ from pathlib import Path
 #%%
 def load_epiagent_results():
     """Load EpiAgent benchmark results"""
-    # Load feature extraction benchmark results
     feature_extraction_datasets = ["Kanemaru2023", "Li2023b"]
-    epiagent_root = Path("../EpiAgent/benchmarks")
-    feature_extraction_result_csvs = {dataset: epiagent_root / f"zero_shot_feature_extraction_{dataset}/results.csv" for dataset in feature_extraction_datasets}
+    # epiagent_root = Path("../EpiAgent/benchmarks")
+    epiagent_root = Path("epiagent_bench")
+    feature_extraction_result_csvs = {dataset: epiagent_root / f"zero_shot_feature_extraction/{dataset}/results.csv" for dataset in feature_extraction_datasets}
 
     feature_extraction_results = {}
     for dataset, csv_path in feature_extraction_result_csvs.items():
@@ -25,23 +25,25 @@ def load_epiagent_results():
 
     # Load perturbation benchmark results
     perturbation_datasets = ["Liscovitch_Brauer2021", "Pierce2021"]
-    perturbation_cohens_d_paths = {dataset: epiagent_root / f"zero_shot_perturbation_effect_prediction_{dataset}/model_score.txt" for dataset in perturbation_datasets}
-    perturbation_plausibility_paths = {dataset: epiagent_root / f"zero_shot_perturbation_effect_prediction_{dataset}/biological_plausibility_score.txt" for dataset in perturbation_datasets}
+    perturbation_cohens_d_paths = {dataset: epiagent_root / f"zero_shot_perturbation_effect/{dataset}/model_score.txt" for dataset in perturbation_datasets}
+    perturbation_spearmanr_paths = {dataset: epiagent_root / f"zero_shot_perturbation_effect/{dataset}/chromVAR_spearman_correlation_rank.txt" for dataset in perturbation_datasets}
     perturbation_results = {}
-    for dataset, cohens_d_path in perturbation_cohens_d_paths.items():
-        plausibility_path = perturbation_plausibility_paths[dataset]
-        if cohens_d_path.exists() and plausibility_path.exists():
+    for dataset in perturbation_datasets:
+        cohens_d_path = perturbation_cohens_d_paths[dataset]
+        spearmanr_path = perturbation_spearmanr_paths[dataset]
+        if cohens_d_path.exists():
             with open(cohens_d_path, 'r') as file:
                 cohens_d = file.read().strip()
                 match = re.search(r"Weighted mean Cohen's d[^\d\-]*([-+]?\d*\.\d+|\d+)", cohens_d)
                 cohens_d = float(match.group(1)) 
-            with open(plausibility_path, 'r') as file:
-                biological_plausibility = file.read().strip()
-                match = re.search(r"Spearman correlation[^\d\-]*([-+]?\d*\.\d+|\d+)", biological_plausibility)
-                biological_plausibility = -float(match.group(1))
+        if spearmanr_path.exists():
+            with open(spearmanr_path, 'r') as file:
+                chromVAR_spearmanr = file.read().strip()
+                match = re.search(r"Spearman correlation[^\d\-]*([-+]?\d*\.\d+|\d+)", chromVAR_spearmanr)
+                chromVAR_spearmanr = -float(match.group(1))
             perturbation_results[dataset] = {
                 "cohens_d": cohens_d,
-                "biological_plausibility": biological_plausibility
+                "chromVAR_spearmanr": chromVAR_spearmanr
             }
         else:
             print(f"Warning: EpiAgent perturbation results not found for {dataset}")
@@ -51,10 +53,10 @@ def load_epiagent_results():
 
 def load_chromfound_results():
     """Load ChromFound benchmark results"""
-    # Load feature extraction benchmark results
     feature_extraction_datasets = ["Kanemaru2023_full", "Li2023b_full"]
-    chromfound_root = Path("../ChromFound-Parallel")
-    feature_extraction_result_csvs = {dataset: chromfound_root / f"zero_shot_feature_extraction_chromfound_{dataset}/results.csv" for dataset in feature_extraction_datasets}
+    # chromfound_root = Path("../ChromFound-Parallel")
+    chromfound_root = Path("chromfound_bench")
+    feature_extraction_result_csvs = {dataset: chromfound_root / f"zero_shot_feature_extraction/{dataset}/results.csv" for dataset in feature_extraction_datasets}
 
     feature_extraction_results = {}
     for dataset, csv_path in feature_extraction_result_csvs.items():
@@ -65,25 +67,26 @@ def load_chromfound_results():
         else:
             print(f"Warning: ChromFound results file not found for {dataset}: {csv_path}")
 
-    # Load perturbation benchmark results
     perturbation_datasets = ["Liscovitch_Brauer2021", "Pierce2021"]
-    perturbation_cohens_d_paths = {dataset: chromfound_root / f"zero_shot_perturbation_effect_prediction_chromfound_outputs/{dataset}/model_score.txt" for dataset in perturbation_datasets}
-    perturbation_plausibility_paths = {dataset: chromfound_root / f"zero_shot_perturbation_effect_prediction_chromfound_outputs/{dataset}/biological_plausibility_score.txt" for dataset in perturbation_datasets}
+    perturbation_cohens_d_paths = {dataset: chromfound_root / f"zero_shot_perturbation_effect/{dataset}/model_score.txt" for dataset in perturbation_datasets}
+    perturbation_spearmanr_paths = {dataset: chromfound_root / f"zero_shot_perturbation_effect/{dataset}/chromVAR_spearman_correlation_rank.txt" for dataset in perturbation_datasets}
     perturbation_results = {}
-    for dataset, cohens_d_path in perturbation_cohens_d_paths.items():
-        plausibility_path = perturbation_plausibility_paths[dataset]
-        if cohens_d_path.exists() and plausibility_path.exists():
+    for dataset in perturbation_datasets:
+        cohens_d_path = perturbation_cohens_d_paths[dataset]
+        spearmanr_path = perturbation_spearmanr_paths[dataset]
+        if cohens_d_path.exists():
             with open(cohens_d_path, 'r') as file:
                 cohens_d = file.read().strip()
                 match = re.search(r"Weighted mean Cohen's d[^\d\-]*([-+]?\d*\.\d+|\d+)", cohens_d)
                 cohens_d = float(match.group(1)) 
-            with open(plausibility_path, 'r') as file:
-                biological_plausibility = file.read().strip()
-                match = re.search(r"Spearman correlation[^\d\-]*([-+]?\d*\.\d+|\d+)", biological_plausibility)
-                biological_plausibility = -float(match.group(1))
+        if spearmanr_path.exists():
+            with open(spearmanr_path, 'r') as file:
+                chromVAR_spearmanr = file.read().strip()
+                match = re.search(r"Spearman correlation[^\d\-]*([-+]?\d*\.\d+|\d+)", chromVAR_spearmanr)
+                chromVAR_spearmanr = -float(match.group(1))
             perturbation_results[dataset] = {
                 "cohens_d": cohens_d,
-                "biological_plausibility": biological_plausibility
+                "chromVAR_spearmanr": chromVAR_spearmanr
             }
         else:
             print(f"Warning: ChromFound perturbation results not found for {dataset}")
@@ -163,11 +166,11 @@ def aggregate_metrics(feature_extraction_results, perturbation_results, feature_
             cohens_d_values.append(perturbation_results[dataset]['cohens_d'])
     cohens_d = np.array(cohens_d_values).mean() if len(cohens_d_values) > 0 else 0
 
-    biological_plausibility_values = []
+    chromVAR_spearmanr_values = []
     for dataset in perturbation_datasets:
         if dataset in perturbation_results:
-            biological_plausibility_values.append(perturbation_results[dataset]['biological_plausibility'])
-    biological_plausibility = np.array(biological_plausibility_values).mean() if len(biological_plausibility_values) > 0 else 0
+            chromVAR_spearmanr_values.append(perturbation_results[dataset]['chromVAR_spearmanr'])
+    chromVAR_spearmanr = np.array(chromVAR_spearmanr_values).mean() if len(chromVAR_spearmanr_values) > 0 else 0
 
     return {
         'nmi': nmi,
@@ -180,7 +183,7 @@ def aggregate_metrics(feature_extraction_results, perturbation_results, feature_
         'ilisi': ilisi,
         'pcr_batch': pcr_batch,
         'cohens_d': cohens_d,
-        'biological_plausibility': biological_plausibility
+        'chromVAR_spearmanr': chromVAR_spearmanr
     }
 
 
@@ -211,16 +214,15 @@ labels = [
     "Cell type\nLinear Probe (F1)",
     "Silhouette\nBatch",
     "Batch Label\nLinear Probe (1-F1)",
-    "ilisi",
+    "iLISI",
     "PCR Batch\n(1-PCR)",
-    "Perturbation Effect\nCaptured",
-    "Perturbation Effect\nBiological Plausibility",
+    "Perturbation Effect\nCohen's d",
+    "Perturbation Effect\nChromVAR Spearman-R",
 ]
 
 mins = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-maxs = np.array([1, 1, 1, 1, 1, 1, 1, 1, 1, 0.2, 0.4])
+maxs = np.array([1, 1, 1, 1.25, 1, 1, 1, 5.5, 1, 0.25, 0.75])
 
-# EpiAgent values
 epiagent_values = np.array([
     epiagent_metrics['nmi'],
     epiagent_metrics['ari'],
@@ -232,10 +234,9 @@ epiagent_values = np.array([
     epiagent_metrics['ilisi'],
     epiagent_metrics['pcr_batch'],
     epiagent_metrics['cohens_d'],
-    epiagent_metrics['biological_plausibility']
+    epiagent_metrics['chromVAR_spearmanr']
 ])
 
-# ChromFound values
 chromfound_values = np.array([
     chromfound_metrics['nmi'],
     chromfound_metrics['ari'],
@@ -247,14 +248,12 @@ chromfound_values = np.array([
     chromfound_metrics['ilisi'],
     chromfound_metrics['pcr_batch'],
     chromfound_metrics['cohens_d'],
-    chromfound_metrics['biological_plausibility']
+    chromfound_metrics['chromVAR_spearmanr']
 ])
 
-# Normalize values
 epiagent_norm = (epiagent_values - mins) / (maxs - mins)
 chromfound_norm = (chromfound_values - mins) / (maxs - mins)
 
-# Close the loop
 labels_closed = labels + [labels[0]]
 epiagent_norm_closed = np.append(epiagent_norm, epiagent_norm[0])
 chromfound_norm_closed = np.append(chromfound_norm, chromfound_norm[0])
@@ -267,8 +266,8 @@ fig, ax = plt.subplots(subplot_kw={"projection": "polar"}, figsize=(8, 8))
 
 ax.set_ylim(0, 1)
 ax.set_rlabel_position(0)
-ax.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0])
-ax.set_yticklabels([""] * 5)
+ax.set_yticks(list(np.linspace(0, 1, len(labels_closed))))
+ax.set_yticklabels([""] * len(labels_closed))
 ax.yaxis.set_tick_params(labelleft=False, labelright=False)
 
 # Plot EpiAgent
@@ -310,23 +309,22 @@ for angle, epi_norm, epi_val, chrom_norm, chrom_val in zip(angles_display, epiag
     
     # EpiAgent value annotation
     ax.text(angle, epi_text_radius, f'E:{epi_val:.3f}', 
-            ha='center', va='center', fontsize=14, 
+            ha='center', va='center', fontsize=16, 
             bbox=dict(boxstyle='round,pad=0.2', facecolor='#1f77b4', alpha=0.7, edgecolor='none'),
             color='white', fontweight='bold')
     
     # ChromFound value annotation
     ax.text(angle, chrom_text_radius, f'C:{chrom_val:.3f}', 
-            ha='center', va='center', fontsize=14, 
+            ha='center', va='center', fontsize=16, 
             bbox=dict(boxstyle='round,pad=0.2', facecolor='#ff7f0e', alpha=0.7, edgecolor='none'),
             color='white', fontweight='bold')
 
-# Remove angle degree labels (keep grid lines but hide labels)
-ax.set_xticklabels([])
-# ax.set_xticks(angles)
-# ax.set_xticklabels(labels_closed)
-# ax.set_title('EpiAgent vs ChromFound Comparison', pad=20, fontsize=14, fontweight='bold')
 
-# Add legend
+ax.set_xticklabels([]) # Remove angle degree labels (keep grid lines but hide labels)
+ax.set_xticks(angles)
+# ax.set_xticklabels(labels_closed)
+# ax.tick_params(pad=30)  # Move xtick labels outward
+# ax.set_title('EpiAgent vs ChromFound Comparison', pad=20, fontsize=14, fontweight='bold')
 # ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), fontsize=10)
 
 plt.tight_layout()
