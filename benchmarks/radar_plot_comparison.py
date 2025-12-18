@@ -309,23 +309,23 @@ for angle, epi_norm, epi_val, chrom_norm, chrom_val in zip(angles_display, epiag
     
     # EpiAgent value annotation
     ax.text(angle, epi_text_radius, f'E:{epi_val:.3f}', 
-            ha='center', va='center', fontsize=16, 
+            ha='center', va='center', fontsize=12, 
             bbox=dict(boxstyle='round,pad=0.2', facecolor='#1f77b4', alpha=0.7, edgecolor='none'),
             color='white', fontweight='bold')
     
     # ChromFound value annotation
     ax.text(angle, chrom_text_radius, f'C:{chrom_val:.3f}', 
-            ha='center', va='center', fontsize=16, 
+            ha='center', va='center', fontsize=12, 
             bbox=dict(boxstyle='round,pad=0.2', facecolor='#ff7f0e', alpha=0.7, edgecolor='none'),
             color='white', fontweight='bold')
 
 
 ax.set_xticklabels([]) # Remove angle degree labels (keep grid lines but hide labels)
 ax.set_xticks(angles)
-# ax.set_xticklabels(labels_closed)
-# ax.tick_params(pad=30)  # Move xtick labels outward
-# ax.set_title('EpiAgent vs ChromFound Comparison', pad=20, fontsize=14, fontweight='bold')
-# ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), fontsize=10)
+ax.set_xticklabels(labels_closed)
+ax.tick_params(pad=30)  # Move xtick labels outward
+ax.set_title('EpiAgent vs ChromFound Comparison', pad=20, fontsize=14, fontweight='bold')
+ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), fontsize=10)
 
 plt.tight_layout()
 plt.savefig("radar_plot_comparison.png", dpi=300, bbox_inches='tight')

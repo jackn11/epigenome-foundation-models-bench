@@ -46,6 +46,10 @@ def get_args_parser():
     parser.add_argument('--output_dir', default='./zeroshot_perturbation_effect_prediction_CohensD_outputs', type=str)
     parser.add_argument('--cache_dir', default='/path/to/embeddings/cache', type=str)
     parser.add_argument('--pretrained_model_path', default='/scratch/wkim/project-2-team-1/EpiAgent/model/pretrained_EpiAgent.pth', type=str)
+    # parser.add_argument('--chromVAR_rank_path',
+    #                     default='./Pierce2021_chromVAR/Pierce2021_gene_ranking_chromvar.csv',
+    #                     type=str,
+    #                     help='Path to chromVAR gene ranking file')
     return parser
 
 
@@ -329,7 +333,9 @@ def main(args):
             f.write(f"Weighted mean Cohen's d = {weighted_mean_d:.6f}\n")
 
         if "Pierce2021" in args.csv_path:
-            chromVAR_rank = (Path(__file__).parent / "Pierce2021_chromVAR_gene_ranking.txt").read_text().strip().split(',') 
+            chromVAR_rank = ['sgGATA1', 'sgCAD', 'sgRPL9', 'sgCDC5L', 'sgKLF1', 'sgNFE2', 'sgNRF1', 'sgARID2', 'sgGABPA', 'sgARID3A', 'sgZNF407', 'sgFOSL1', 'sgMAX', 'sgATF3', 'sgHSPA5', 'sgCTCF', 'sgGTF2B', 'sgMYC', 'sgHINFP', 'sgKLF16', 'sgNFYB', 'sgCUX1', 'sgTHAP1', 'sgZBTB11', 'sgPBX2', 'sgATF1', 'sgYY1', 'sgPOLR1D', 'sgBCLAF1', 'sgREST', 'sgZZZ3', 'sgCEBPB', 'sgTFDP1', 'sgTBP', 'sgBRF2', 'sgCEBPZ', 'sgSETDB1', 'sgZNF280A', 'sgTRIM28', 'sgELF1']
+            # chromVAR_rank_df = pd.read_csv(args.chromVAR_rank_path)
+            # chromVAR_rank = chromVAR_rank_df['gene'].tolist() 
 
             chromvar_rank_dict = {gene: rank + 1 for rank, gene in enumerate(chromVAR_rank)}
             
