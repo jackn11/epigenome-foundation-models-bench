@@ -34,11 +34,9 @@ The practical implementation part of the final project for CS-433 Machine learni
 
 Both EpiAgent and ChromFound require a unique set of dependencies. We advise you to create two separate `conda` environments as shown in the steps below.
 
-We have tested the installation with
-- Python 3.10.19
-- CUDA Toolkit 12.1.1 (for GPU support)
+We have tested the installation with Python 3.10.19.
 
-###EpiAgent environment preparation
+### EpiAgent environment preparation
 
 Note: please use the combination of `conda` and `pip` installs as shown below, other combinations are not guaranteed to work.
 
