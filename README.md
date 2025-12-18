@@ -5,6 +5,10 @@
 
 The practical implementation part of the final project for CS-433 Machine learning course at EPFL. This project focuses at benchmarking two state-of-the-art epigenomic foundation models EpiAgent and ChromFound.
 
+<div align="center">
+  <img src="benchmarks/radar_plot_comparison.png" alt="Model Comparison Radar Plot" width="600">
+</div>
+
 *The results of this project should be interpreted as research guidelines and must not be used as standalone evidence for clinical decision-making.*
 
 ## Repository structure:

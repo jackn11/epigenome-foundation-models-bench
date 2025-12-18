@@ -209,10 +209,10 @@ print(f"ChromFound metrics: {chromfound_metrics}")
 labels = [
     "NMI",
     "ARI",
-    "Silhouette",
-    "Graph\nConnectivity",
+    "ASW\n(Cluster)",
     "Cell type\nLinear Probe (F1)",
-    "Silhouette\nBatch",
+    "Graph\nConnectivity",
+    "ASW\n(Batch)",
     "Batch Label\nLinear Probe (1-F1)",
     "iLISI",
     "PCR Batch\n(1-PCR)",
@@ -221,14 +221,14 @@ labels = [
 ]
 
 mins = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-maxs = np.array([1, 1, 1, 1.25, 1, 1, 1, 5.5, 1, 0.25, 0.75])
+maxs = np.array([1, 1, 1, 1, 1.25, 1, 1, 5.5, 1, 0.25, 0.75])
 
 epiagent_values = np.array([
     epiagent_metrics['nmi'],
     epiagent_metrics['ari'],
     epiagent_metrics['silhouette'],
-    epiagent_metrics['graph_connectivity'],
     epiagent_metrics['cell_type_linear_probe_f1'],
+    epiagent_metrics['graph_connectivity'],
     epiagent_metrics['silhouette_batch'],
     1 - epiagent_metrics['batch_linear_probe_f1'],
     epiagent_metrics['ilisi'],
@@ -241,8 +241,8 @@ chromfound_values = np.array([
     chromfound_metrics['nmi'],
     chromfound_metrics['ari'],
     chromfound_metrics['silhouette'],
-    chromfound_metrics['graph_connectivity'],
     chromfound_metrics['cell_type_linear_probe_f1'],
+    chromfound_metrics['graph_connectivity'],
     chromfound_metrics['silhouette_batch'],
     1 - chromfound_metrics['batch_linear_probe_f1'],
     chromfound_metrics['ilisi'],
