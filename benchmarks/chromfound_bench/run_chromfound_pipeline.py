@@ -10,9 +10,6 @@ from pathlib import Path
 from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score, adjusted_mutual_info_score, fowlkes_mallows_score
 from sklearn.cluster import KMeans
 from scib.metrics import silhouette, silhouette_batch
-from scipy.sparse import csr_matrix, vstack
-from joblib import Parallel, delayed
-import multiprocessing as mp
 import wandb
 import re
 
