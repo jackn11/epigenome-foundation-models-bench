@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 
-# data from wandb
+# data from wandb - obtained by running zero shot feature extraction with and without shuffling and complete shuffling
 data = {
     "Kanemaru2023": {
         "no-permutation": {

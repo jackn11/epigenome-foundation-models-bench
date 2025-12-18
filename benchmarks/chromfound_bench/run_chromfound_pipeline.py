@@ -1,18 +1,3 @@
-"""
-ChromFound Benchmarking Script
-
-This script runs the full ChromFound pipeline on the given dataset:
-1. Converts cCRE identifiers to genomic coordinates
-2. Preprocesses data (QC, normalization, log transform)
-3. Runs ChromFound inference to generate embeddings
-4. Applies PCA and K-means clustering (matching notebook approach)
-5. Calculates ARI and NMI metrics
-6. Saves results to benchmarks/results/chromfound/
-
-Run this in the chromfound conda environment:
-    conda activate chromfound
-    python benchmarks/scripts/run_chromfound_benchmark_notebook_pipeline.py
-"""
 import os
 import sys
 import json
@@ -22,59 +7,43 @@ import pandas as pd
 import numpy as np
 import subprocess
 from pathlib import Path
-from datetime import datetime
 from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score, adjusted_mutual_info_score, fowlkes_mallows_score
 from sklearn.cluster import KMeans
 from scib.metrics import silhouette, silhouette_batch
-from scipy.sparse import csr_matrix, vstack
-from joblib import Parallel, delayed
-import multiprocessing as mp
 import wandb
+import re
+
+
+
+_project_root = Path(__file__).parent.parent.parent
+_chromfound_path = _project_root / "ChromFound"
+sys.path.insert(0, str(_chromfound_path))
+
+from src.data.atac_preprocess import deepen_atac_data
 
 
 
 def get_args_parser():
-    parser = argparse.ArgumentParser('ChromFound Benchmarking Script')
-    # starting from step 2 (no preprocessing)
-    # parser.add_argument('--dataset_name', type=str, default='Kanemaru2023_downsampled')
-    # parser.add_argument('--dataset_path', type=str, default='/scratch/wkim/project-2-team-1/ChromFound-Parallel/results-copy/chromfound/Kanemaru2023_downsampled/merge10/Kanemaru2023_downsampled_10000_cells_preprocessed_merge10.h5ad')
-    # parser.add_argument('--project_root', type=str, default='/scratch/wkim/project-2-team-1/')
+    """Get arguments parser for the benchmark."""
     
-    # starting from step 1 (preprocessing)
-    # parser.add_argument('--dataset_name', type=str, default='buenrostro2018_example')
-    # parser.add_argument('--dataset_path', type=str, default='/scratch/naimer/github/project-2-team-1/EpiAgent/data/Buenrostro2018/Buenrostro2018-bone_marrow_tissue/Buenrostro2018-bone_marrow_tissue-cell_by_cCRE.h5ad')
-    # parser.add_argument('--project_root', type=str, default='/scratch/wkim/project-2-team-1/')
-
-    # starting from step 1 (preprocessing)
-    # parser.add_argument('--dataset_name', type=str, default='Pierce2021')
-    # parser.add_argument('--dataset_path', type=str, default='/scratch/wkim/project-2-team-1/ChromFound-Parallel/external_data/GSE168851_crispr_perturb/K562_SpearATAC_for_chromfound.h5ad')
-    # parser.add_argument('--project_root', type=str, default='/scratch/wkim/project-2-team-1/')
-
-    # starting from step 2 (no preprocessing)
-    # parser.add_argument('--dataset_name', type=str, default='Pierce2021')
-    # parser.add_argument('--dataset_path', type=str, default='/scratch/wkim/project-2-team-1/benchmarks/results/chromfound/Pierce2021/merge10/Pierce2021_preprocessed_merge10.h5ad')
-    # parser.add_argument('--project_root', type=str, default='/scratch/wkim/project-2-team-1/')
-
-    # starting from step 1 (preprocessing)
-    parser.add_argument('--dataset_name', type=str, default='Liscovitch_Brauer2021')
-    parser.add_argument('--dataset_path', type=str, default='/scratch/wkim/project-2-team-1/ChromFound-Parallel/data/sample/genetic_perturbation_data/Liscovitch_Brauer2021/Liscovitch_Brauer2021_for_chromfound.h5ad')
-    parser.add_argument('--project_root', type=str, default='/scratch/wkim/project-2-team-1/')
+    parser = argparse.ArgumentParser('ChromFound Benchmarking Script')
+    
+    parser.add_argument('--dataset_name', type=str, required=True, help='Dataset name')
+    parser.add_argument('--dataset_path', type=str, required=True, help='Path to the dataset h5ad file')
+    parser.add_argument('--project_root', type=str, required=True, help='Project root directory')
+    parser.add_argument('--results_dir', type=str, required=True, help='Results directory path')
     parser.add_argument('--n_cells_target', type=int, default=None, help='Number of cells to downsample to. If None (default), no downsampling is performed.')
+    parser.add_argument('--gpu_device', type=int, required=True, help='GPU device number (e.g., 0, 1, 5)')
+    parser.add_argument('--continue_from_step2', action='store_true', help='Continue from Step 2 (skip preprocessing, requires preprocessed data)')
+    parser.add_argument('--num_cell_merge', type=int, required=True, choices=[1, 10], help='Number of cells to merge (1 for single-cell mode, 10 for ChromFound paper mode)')
+    parser.add_argument('--batch_size', type=int, default=2, help='Batch size for inference')
+    parser.add_argument('--n_pca_components', type=int, default=50, help='Number of PCA components')
+    parser.add_argument('--n_samples_for_pca', type=int, default=1000, help='Number of samples for PCA')
+    parser.add_argument('--cell_type_col', type=str, default='cell_type', help='Column name for cell type')
+    parser.add_argument('--pretrain_checkpoint_path', type=str, default=None, help='Path to pretrain checkpoint directory')
+    parser.add_argument('--pretrain_model_name', type=str, default='model.pt', help='Pretrain model file name')
+    parser.add_argument('--pretrain_config_file', type=str, default='chromfd_pretrain.yaml', help='Pretrain config file name')
     return parser
-
-# Conversion function is defined below
-
-# Import ChromFound preprocessing functions
-# Assuming we're running from project root, adjust path as needed
-_project_root = Path(__file__).parent.parent.parent
-_chromfound_path = _project_root / "ChromFound-Parallel"
-sys.path.insert(0, str(_chromfound_path))
-from src.data.atac_preprocess import deepen_atac_data
-
-
-# dataset_name = "Kanemaru2023_downsampled"
-# dataset_path = "data2/Kanemaru2023/Kanemaru2023-downsampled/Kanemaru2023_downsampled_10000_cells.h5ad"
-# dataset_path = "/scratch/wkim/project-2-team-1/ChromFound-Parallel/results-copy/chromfound/Kanemaru2023_downsampled/merge10/Kanemaru2023_downsampled_10000_cells_preprocessed_merge10.h5ad"
 
 
 def convert_ccre_to_genomic_coords(adata, inplace=True):
@@ -95,18 +64,16 @@ def convert_ccre_to_genomic_coords(adata, inplace=True):
     Returns:
         AnnData object with genomic coordinate columns added (or original if inplace=True)
     """
-    import re
     
     if not inplace:
         adata = adata.copy()
     
-    # Check if columns already exist
     required_cols = ['#Chromosome', 'hg38_Start', 'hg38_End']
     if all(col in adata.var.columns for col in required_cols):
         print("Genomic coordinate columns already exist. Skipping conversion.")
         return adata
     
-    print("Converting cCRE identifiers to genomic coordinates...")
+    print("Converting cCRE identifiers to genomic coordinates")
     
     # Parse cCRE identifiers from var.index
     # Format: "chr1:9848-10355" -> chromosome="chr1", start=9848, end=10355
@@ -129,7 +96,6 @@ def convert_ccre_to_genomic_coords(adata, inplace=True):
             ends.append(end)
         else:
             failed_parses.append(ccre_id)
-            # Default values for failed parses (shouldn't happen with proper cCRE format)
             chromosomes.append("chr1")
             starts.append(0)
             ends.append(0)
@@ -141,16 +107,14 @@ def convert_ccre_to_genomic_coords(adata, inplace=True):
         else:
             print(f"First 10 failed IDs: {failed_parses[:10]}")
     
-    # Add columns to var
-    # Use index alignment to ensure proper assignment
     adata.var['#Chromosome'] = pd.Series(chromosomes, index=adata.var.index)
     adata.var['hg38_Start'] = pd.Series(starts, dtype=int, index=adata.var.index)
     adata.var['hg38_End'] = pd.Series(ends, dtype=int, index=adata.var.index)
     
     print(f"Successfully converted {len(adata.var)} cCRE identifiers to genomic coordinates")
-    print(f"  Chromosomes: {pd.Series(chromosomes).value_counts().head(5).to_dict()}")
-    print(f"  Start range: {min(starts)} - {max(starts)}")
-    print(f"  End range: {min(ends)} - {max(ends)}")
+    print(f"Chromosomes: {pd.Series(chromosomes).value_counts().head(5).to_dict()}")
+    print(f"Start range: {min(starts)} - {max(starts)}")
+    print(f"End range: {min(ends)} - {max(ends)}")
     
     return adata
 
@@ -164,30 +128,24 @@ def setup_paths(args, num_cell_merge=1):
     Returns:
         Dictionary of file paths
     """
-    # Get project root (assuming script is in benchmarks/scripts/)
 
-    
-    # project_root = Path(__file__).parent.parent.parent
     project_root = Path(args.project_root)
     benchmarks_dir = project_root / "benchmarks"
     
-    # Create merge-specific directory and file names
     merge_suffix = f"merge{num_cell_merge}"
-    results_subdir = benchmarks_dir / "results-chrom" / "chromfound" / args.dataset_name / merge_suffix
-    # results_subdir = Path('/scratch/wkim/project-2-team-1/ChromFound-Parallel/results-copy/chromfound/Kanemaru2023_downsampled/merge10')
+    results_subdir = Path(args.results_dir) / merge_suffix
     
     paths = {
         "project_root": project_root,
         "benchmarks_dir": benchmarks_dir,
         "results_dir": results_subdir,
-        "input_data": benchmarks_dir / args.dataset_path,
+        "input_data": Path(args.dataset_path),
         "preprocessed_data": results_subdir / f"{args.dataset_name}_preprocessed_{merge_suffix}.h5ad",
-        "embeddings": results_subdir / "embeddings_pca.h5ad",  # Memory-efficient PCA version
+        "embeddings": results_subdir / "embeddings_pca.h5ad",
         "metrics": results_subdir / "metrics.json",
         "kmeans_labels": results_subdir / "kmeans_labels.h5ad",
     }
     
-    # Create all necessary directories
     paths["results_dir"].mkdir(parents=True, exist_ok=True)
     paths["preprocessed_data"].parent.mkdir(parents=True, exist_ok=True)
     paths["embeddings"].parent.mkdir(parents=True, exist_ok=True)
@@ -210,20 +168,14 @@ def preprocess_data(paths, data_args, n_cells_target=None):
     Returns:
         Path to preprocessed data file
     """
-    print("\n" + "=" * 80)
-    print(f"STEP 1: Loading and Preprocessing Data")
-    print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 80)
+    print(f"\nLoading and Preprocessing Data")
     
-    # Load data
     print(f"Loading data from: {paths['input_data']}")
     adata = sc.read_h5ad(paths['input_data'])
     print(f"Original shape: {adata.shape}")
 
-    # Downsample if n_cells_target is specified and dataset is larger
     if n_cells_target is not None and adata.n_obs > n_cells_target:
-        print(f"\nDownsampling from {adata.n_obs:,} to {n_cells_target:,} cells...")
-        # Use scanpy's subsample function which preserves cell type proportions
+        print(f"\nDownsampling from {adata.n_obs:,} to {n_cells_target:,} cells")
         sc.pp.subsample(adata, n_obs=n_cells_target, random_state=42)
         print(f"After downsampling: {adata.shape}")
     elif n_cells_target is not None:
@@ -231,65 +183,52 @@ def preprocess_data(paths, data_args, n_cells_target=None):
     else:
         print(f"\nNo downsampling requested (n_cells_target=None), using all {adata.n_obs:,} cells")
     
-    # Convert cCRE identifiers to genomic coordinates (idempotent)
-    print("\nConverting cCRE identifiers to genomic coordinates...")
+    print("\nConverting cCRE identifiers to genomic coordinates")
     adata = convert_ccre_to_genomic_coords(adata, inplace=True)
     
-    # Ensure coordinate columns are integers (only convert if not already int)
     if 'hg38_Start' in adata.var.columns:
         if adata.var['hg38_Start'].dtype != 'int64' and adata.var['hg38_Start'].dtype != 'int32':
-            # Check for NaN values before converting
             if adata.var['hg38_Start'].isna().any():
                 print("Warning: hg38_Start contains NaN values. Filling with 0.")
                 adata.var['hg38_Start'] = adata.var['hg38_Start'].fillna(0)
             adata.var['hg38_Start'] = adata.var['hg38_Start'].astype(int)
     if 'hg38_End' in adata.var.columns:
         if adata.var['hg38_End'].dtype != 'int64' and adata.var['hg38_End'].dtype != 'int32':
-            # Check for NaN values before converting
             if adata.var['hg38_End'].isna().any():
                 print("Warning: hg38_End contains NaN values. Filling with 0.")
                 adata.var['hg38_End'] = adata.var['hg38_End'].fillna(0)
             adata.var['hg38_End'] = adata.var['hg38_End'].astype(int)
     
-    # Verify required columns exist for ChromFound
     required_cols = ['#Chromosome', 'hg38_Start', 'hg38_End']
     missing_cols = [col for col in required_cols if col not in adata.var.columns]
     if missing_cols:
         raise ValueError(f"Missing required columns in adata.var: {missing_cols}")
-    print(f"\n✓ Required columns verified: {required_cols}")
-    print(f"  Data shape: {adata.shape}")
+    print(f"\nRequired columns verified: {required_cols}")
+    print(f"Data shape: {adata.shape}")
     
-    # Skip cell aggregation (num_cell_merge=1) to match EpiAgent's single-cell approach
-    # Or set to 1 to keep single cells
     num_cell_merge = data_args.get("num_cell_merge", 1)
     if num_cell_merge > 1:
-        print(f"\nPerforming cell aggregation (num_cell_merge={num_cell_merge})...")
+        print(f"\nPerforming cell aggregation (num_cell_merge={num_cell_merge})")
         adata = deepen_atac_data(adata, num_cell_merge=num_cell_merge)
         print(f"After cell aggregation: {adata.shape}")
     else:
         print("\nSkipping cell aggregation (num_cell_merge=1, single-cell mode)")
     
-    # Normalize and log transform
-    print("\nNormalizing and log transforming...")
-    print('  Normalizing...')
+    print("\nNormalizing")
     sc.pp.normalize_total(adata)
-    print('  Log transforming...')
+    print('Log transforming')
     sc.pp.log1p(adata)
-    print("  ✓ Normalization and log transform complete")
+    print("Normalization and log transform complete")
     
-    # Add 'celltype' column for ChromFound compatibility (ChromFound code hardcodes 'celltype')
     cell_type_col = data_args.get("cell_type_col", "cell_type")
     if 'celltype' not in adata.obs.columns and cell_type_col in adata.obs.columns:
         adata.obs['celltype'] = adata.obs[cell_type_col]
         print(f"\nAdded 'celltype' column (copied from '{cell_type_col}') for ChromFound compatibility")
     
-    # Save preprocessed data (use compression for speed/size tradeoff)
     print(f"\nSaving preprocessed data to: {paths['preprocessed_data']}")
-    # Use compression level 1 for faster writes (default is 4)
     adata.write_h5ad(paths['preprocessed_data'], compression='gzip', compression_opts=1)
     
-    print(f"\n✓ STEP 1 COMPLETE at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"  Preprocessed data saved: {paths['preprocessed_data']}")
+    print(f"Preprocessed data saved: {paths['preprocessed_data']}")
     
     return paths['preprocessed_data']
 
@@ -306,15 +245,10 @@ def run_inference(paths, inference_config, data_args):
     Returns:
         Path to embeddings file
     """
-    print("\n" + "=" * 80)
-    print(f"STEP 2: Running ChromFound Inference")
-    print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 80)
-    
-    # Build inference command
-    # Use memory-efficient sampled PCA version for large datasets
+    print(f"\nRunning ChromFound Inference")
+
     n_pca_components = inference_config.get("n_pca_components", 50)
-    n_samples_for_pca = inference_config.get("n_samples_for_pca", 1000)  # Fit PCA on 1000 random cells
+    n_samples_for_pca = inference_config.get("n_samples_for_pca", 1000)
     
     inference_command = [
         sys.executable, '-m', 'src.cell_embedding_pca',
@@ -327,23 +261,20 @@ def run_inference(paths, inference_config, data_args):
         '--batch_size', str(inference_config["batch_size"]),
         '--cell_type_col', data_args["cell_type_col"],
         '--n_pca_components', str(n_pca_components),
-        '--n_samples_for_pca', str(n_samples_for_pca)  # Fast: fit PCA on sample, project all
+        '--n_samples_for_pca', str(n_samples_for_pca)
     ]
     
-    print(f"\nRunning inference command...")
-    print(f"  Device: GPU {inference_config['device']}")
-    print(f"  Batch size: {inference_config['batch_size']}")
-    print(f"  Model: {inference_config['pretrain_model_name']}")
-    print(f"  Input: {paths['preprocessed_data']}")
-    print(f"  Output: {paths['results_dir']}")
-    print(f"\nNote: This step may take several minutes. Progress will be shown below...")
-    print("-" * 80)
+    print(f"\nRunning inference command")
+    print(f"Device: GPU {inference_config['device']}")
+    print(f"Batch size: {inference_config['batch_size']}")
+    print(f"Model: {inference_config['pretrain_model_name']}")
+    print(f"Input: {paths['preprocessed_data']}")
+    print(f"Output: {paths['results_dir']}")
+    print(f"\nNote: This step may take several minutes. Progress will be shown below")
     
-    # Change to ChromFound directory for inference
     original_cwd = os.getcwd()
     _chromfound_path = Path(__file__).parent.parent.parent / "ChromFound-Parallel"
     
-    # Set environment variable to help with CUDA memory fragmentation
     env = os.environ.copy()
     env['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
@@ -352,16 +283,14 @@ def run_inference(paths, inference_config, data_args):
         result = subprocess.run(inference_command, check=True, env=env)
     finally:
         os.chdir(original_cwd)
-    
-    # Memory-efficient version saves PCA-reduced embeddings as embeddings_pca.h5ad
+
     embeddings_path = paths['results_dir'] / "embeddings_pca.h5ad"
     
     if not embeddings_path.exists():
         raise FileNotFoundError(f"Embeddings not found at {embeddings_path}")
     
-    print("-" * 80)
-    print(f"\n✓ STEP 2 COMPLETE at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"  Embeddings saved to: {embeddings_path}")
+    print(f"\nOMPLETE")
+    print(f"Embeddings saved to: {embeddings_path}")
     return embeddings_path
 
 
@@ -378,16 +307,11 @@ def cluster_and_evaluate(paths, num_cell_merge=1):
     Returns:
         Dictionary with metrics (ARI, NMI, etc.)
     """
-    print("\n" + "=" * 80)
-    print(f"STEP 3: Clustering and Evaluation")
-    print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 80)
+    print(f"\nClustering and Evaluation")
     
-    # Load PCA-reduced embeddings (memory-efficient version)
     print(f"\nLoading PCA-reduced embeddings from: {paths['embeddings']}")
     adata = sc.read_h5ad(paths['embeddings'])
     
-    # Check if embeddings are already PCA-reduced (from cell_embedding_pca.py)
     if 'X_pca' in adata.obsm:
         print(f"Found pre-computed PCA embeddings: {adata.obsm['X_pca'].shape}")
         embeddings = adata.obsm['X_pca']
@@ -399,7 +323,6 @@ def cluster_and_evaluate(paths, num_cell_merge=1):
     else:
         raise KeyError("Neither X_pca nor X_embedding found in adata.obsm")
     
-    # Get cell type column name (prefer 'cell_type' to match EpiAgent, but fallback to 'celltype')
     cell_type_col = None
     for col in ['cell_type', 'celltype']:
         if col in adata.obs.columns:
@@ -409,37 +332,32 @@ def cluster_and_evaluate(paths, num_cell_merge=1):
     if cell_type_col is None:
         raise KeyError("Cell type column not found in adata.obs")
     
-    # Create new AnnData with embeddings
     obs_df = pd.DataFrame(adata.obs[cell_type_col].tolist(), columns=[cell_type_col])
     adata_emb = sc.AnnData(X=embeddings, obs=obs_df)
     
-    # Apply PCA only if not already done
     if pca_already_done:
         print("\n[3.1] Using pre-computed PCA embeddings (memory-efficient mode)")
         n_pcs = embeddings.shape[1]
         adata_emb.obsm['X_pca'] = embeddings
-        print(f"  ✓ PCA already computed: {n_pcs} principal components")
+        print(f"PCA already computed: {n_pcs} principal components")
     else:
-        print("\n[3.1] Applying PCA (reducing dimensionality)...")
+        print("\n[3.1] Applying PCA (reducing dimensionality)")
         n_pcs = 10
         sc.tl.pca(adata_emb, n_comps=n_pcs)
-        print(f"  ✓ PCA complete: {n_pcs} principal components")
+        print(f"PCA complete: {n_pcs} principal components")
     
-    # Compute neighbors graph (using PCA-reduced embeddings) - for UMAP visualization
-    print("\n[3.2] Computing neighbors graph...")
+    print("\n[3.2] Computing neighbors graph")
     sc.pp.neighbors(adata_emb, n_neighbors=15, use_rep='X_pca')
-    print("  ✓ Neighbors graph computed")
+    print("Neighbors graph computed")
     
-    # Compute UMAP for visualization
-    print("\n[3.3] Computing UMAP...")
+    print("\n[3.3] Computing UMAP")
     sc.tl.umap(adata_emb)
-    print("  ✓ UMAP computed")
+    print("UMAP computed")
     
-    # K-means clustering (matching notebook approach exactly)
     true_labels = adata_emb.obs[cell_type_col].values
     num_cell_types = len(np.unique(true_labels))
     
-    print(f"\n[3.4] Performing K-means clustering (n_clusters={num_cell_types})...")
+    print(f"\n[3.4] Performing K-means clustering (n_clusters={num_cell_types})")
     kmeans = KMeans(n_clusters=num_cell_types, random_state=23).fit(adata_emb.obsm['X_pca'])
     predicted_labels = kmeans.labels_
     adata_emb.obs['kmeans'] = predicted_labels.astype(str)
@@ -447,17 +365,13 @@ def cluster_and_evaluate(paths, num_cell_merge=1):
     n_clusters = len(np.unique(predicted_labels))
     print(f"Number of K-means clusters: {n_clusters}")
     
-    # Calculate metrics (exactly as in notebook)
     ari_score = adjusted_rand_score(true_labels, predicted_labels)
     nmi_score = normalized_mutual_info_score(true_labels, predicted_labels)
     ami_score = adjusted_mutual_info_score(true_labels, predicted_labels)
     fmi_score = fowlkes_mallows_score(true_labels, predicted_labels)
     
-    # Calculate silhouette scores (same as EpiAgent)
     silhouette_score = silhouette(adata_emb, label_key=cell_type_col, embed='X_pca')
     
-    # Calculate batch silhouette if batch column exists
-    # Check if any column name (lowercased) contains "batch"
     batch_key = None
     for col in adata_emb.obs.columns:
         if 'batch' in col.lower():
@@ -468,20 +382,19 @@ def cluster_and_evaluate(paths, num_cell_merge=1):
         silhouette_batch_score = silhouette_batch(adata_emb, label_key=cell_type_col, batch_key=batch_key, embed='X_pca')
     else:
         silhouette_batch_score = None
-        print("  (No batch column found, skipping batch silhouette)")
+        print("(No batch column found, skipping batch silhouette)")
     
     print(f"\nMetrics:")
-    print(f"  ARI (Adjusted Rand Index): {ari_score:.4f}")
-    print(f"  NMI (Normalized Mutual Information): {nmi_score:.4f}")
-    print(f"  AMI (Adjusted Mutual Information): {ami_score:.4f}")
-    print(f"  FMI (Fowlkes-Mallows Index): {fmi_score:.4f}")
-    print(f"  Silhouette Score: {silhouette_score:.4f}")
+    print(f"ARI (Adjusted Rand Index): {ari_score:.4f}")
+    print(f"NMI (Normalized Mutual Information): {nmi_score:.4f}")
+    print(f"AMI (Adjusted Mutual Information): {ami_score:.4f}")
+    print(f"FMI (Fowlkes-Mallows Index): {fmi_score:.4f}")
+    print(f"Silhouette Score: {silhouette_score:.4f}")
     if silhouette_batch_score is not None:
-        print(f"  Silhouette Batch Score: {silhouette_batch_score:.4f}")
-    print(f"  Number of true cell types: {num_cell_types}")
-    print(f"  Number of predicted clusters: {n_clusters}")
+        print(f"Silhouette Batch Score: {silhouette_batch_score:.4f}")
+    print(f"Number of true cell types: {num_cell_types}")
+    print(f"Number of predicted clusters: {n_clusters}")
     
-    # Save results
     metrics = {
         "model": "chromfound",
         "num_cell_merge": int(num_cell_merge),
@@ -502,13 +415,10 @@ def cluster_and_evaluate(paths, num_cell_merge=1):
     with open(paths['metrics'], 'w') as f:
         json.dump(metrics, f, indent=2)
     
-    # Log to wandb if initialized
     if wandb.run is not None:
         wandb.log(metrics)
     
-    # return metrics
     
-    # Save K-means labels
     print(f"Saving K-means labels to: {paths['kmeans_labels']}")
     adata_emb.write_h5ad(paths['kmeans_labels'])
 
@@ -518,68 +428,16 @@ def cluster_and_evaluate(paths, num_cell_merge=1):
 
 def main(args):
     """Main benchmarking pipeline."""
-    print("\n" + "=" * 80)
-    print("ChromFound Benchmarking Pipeline")
-    print("=" * 80)
-    print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("\nPipeline overview:")
-    print("  1. Load data and convert cCRE identifiers to genomic coordinates")
-    print("  2. Preprocess: Quality control, normalization, log transform")
-    print("  3. Run ChromFound inference to generate cell embeddings")
-    print("  4. Apply PCA, neighbors, UMAP, and K-means clustering")
-    print("  5. Calculate ARI and NMI metrics")
-    print("=" * 80)
+    print("\nChromFound Benchmarking Pipeline")
     
-    # Ask user for GPU selection
-    print("\n" + "-" * 80)
-    print("GPU SELECTION:")
-    print("-" * 80)
-    while True:
-        try:
-            gpu_choice = input("Enter GPU device number (e.g., 0, 1, 5): ").strip()
-            gpu_device = int(gpu_choice)
-            if gpu_device >= 0:
-                break
-            print("Invalid GPU number. Please enter a non-negative integer.")
-        except ValueError:
-            print("Invalid input. Please enter a number.")
+    gpu_device = args.gpu_device
+    continue_from_step2 = args.continue_from_step2
+    num_cell_merge = args.num_cell_merge
     
-    # Ask user if they want to continue from step 2 or run from scratch
-    print("\n" + "-" * 80)
-    print("PIPELINE OPTIONS:")
-    print("  1. Run full pipeline from scratch (Step 1 → Step 2 → Step 3)")
-    print("  2. Continue from Step 2 (skip preprocessing, requires preprocessed data)")
-    print("-" * 80)
-    
-    while True:
-        choice = input("\nEnter choice (1 or 2): ").strip()
-        if choice in ['1', '2']:
-            break
-        print("Invalid choice. Please enter 1 or 2.")
-    
-    continue_from_step2 = (choice == '2')
-    
-    # Ask user for cell merge value
-    print("\n" + "-" * 80)
-    print("CELL MERGE OPTIONS:")
-    print("  1. num_cell_merge=1 (single-cell mode (true zero-shot))")
-    print("  2. num_cell_merge=10 (like in ChromFound paper)")
-    print("-" * 80)
-    
-    while True:
-        merge_choice = input("\nEnter choice (1 or 2): ").strip()
-        if merge_choice in ['1', '2']:
-            break
-        print("Invalid choice. Please enter 1 or 2.")
-    
-    num_cell_merge = 1 if merge_choice == '1' else 10
-    
-    # Setup paths with merge value
     paths = setup_paths(args, num_cell_merge=num_cell_merge)
     print(f"\nOutput directory: {paths['results_dir']}")
     print(f"Using num_cell_merge={num_cell_merge}")
     
-    # Initialize Weights & Biases
     wandb.init(
         project="chromfound-benchmark",
         name=f"chromfound-merge{num_cell_merge}-gpu{gpu_device}_{args.dataset_name}",
@@ -589,71 +447,64 @@ def main(args):
             "num_cell_merge": num_cell_merge,
             "gpu_device": gpu_device,
             "dataset": args.dataset_name,
-            "batch_size": 2,
-            "n_pcs": 50,
+            "batch_size": args.batch_size,
+            "n_pcs": args.n_pca_components,
         }
     )
     
-    # Configuration
     data_args = {
-        "cell_type_col": "cell_type",
+        "cell_type_col": args.cell_type_col,
         "num_cell_merge": num_cell_merge,
     }
     
     _chromfound_path = Path(__file__).parent.parent.parent / "ChromFound-Parallel"
+    if args.pretrain_checkpoint_path is None:
+        pretrain_checkpoint_path = str(_chromfound_path / "src" / "checkpoints")
+    else:
+        pretrain_checkpoint_path = args.pretrain_checkpoint_path
+    
     inference_config = {
-        "pretrain_checkpoint_path": str(_chromfound_path / "src" / "checkpoints"),
-        "pretrain_model_name": "model.pt",
-        "pretrain_config_file": "chromfd_pretrain.yaml",
-        "batch_size": 2,
+        "pretrain_checkpoint_path": pretrain_checkpoint_path,
+        "pretrain_model_name": args.pretrain_model_name,
+        "pretrain_config_file": args.pretrain_config_file,
+        "batch_size": args.batch_size,
         "device": gpu_device,
-        "n_pca_components": 50,  # Memory-efficient: save only 50-dim PCA instead of 1.3M-dim
-        "n_samples_for_pca": 1000,  # Fit PCA on 1000 random cells (FAST), then project all
+        "n_pca_components": args.n_pca_components,
+        "n_samples_for_pca": args.n_samples_for_pca,
     }
     
-    # Log configuration to wandb
     wandb.config.update({
         "batch_size": inference_config["batch_size"],
         "pretrain_model_name": inference_config["pretrain_model_name"],
     })
     
-    # Run pipeline
     try:
         if continue_from_step2:
-            # Check if preprocessed data exists
             if not paths['preprocessed_data'].exists():
                 print(f"\nERROR: Preprocessed data not found at: {paths['preprocessed_data']}")
                 print(f"Expected file for num_cell_merge={num_cell_merge}")
                 print("Please run the full pipeline first (choose option 1)")
                 sys.exit(1)
             
-            print(f"\n✓ Preprocessed data found: {paths['preprocessed_data']}")
-            print("  Skipping Step 1 (preprocessing already done)")
+            print(f"\nPreprocessed data found: {paths['preprocessed_data']}")
+            print("Skipping Step 1 (preprocessing already done)")
             print(f"\nUsing batch_size={inference_config['batch_size']}")
         else:
-            # Step 1: Preprocess
             preprocess_data(paths, data_args, n_cells_target=args.n_cells_target)
             print(f"\nUsing batch_size={inference_config['batch_size']}")
         
-        # Step 2: Run inference (COMMENTED OUT - embeddings already generated)
         run_inference(paths, inference_config, data_args)
         
-        # Step 3: Cluster and evaluate
         metrics = cluster_and_evaluate(paths, num_cell_merge=num_cell_merge)
         
-        print("\n" + "=" * 80)
-        print("BENCHMARKING COMPLETE")
-        print("=" * 80)
-        print(f"Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("\nBENCHMARKING COMPLETE")
         print(f"\nResults saved to: {paths['results_dir']}")
         print(f"\nFinal Metrics (merge={num_cell_merge}):")
-        print(f"  ARI (Adjusted Rand Index): {metrics['ari']:.4f}")
-        print(f"  NMI (Normalized Mutual Information): {metrics['nmi']:.4f}")
-        print(f"  Number of clusters: {metrics['n_clusters']}")
-        print(f"  Number of cell types: {metrics['n_cell_types']}")
-        print("=" * 80)
+        print(f"ARI (Adjusted Rand Index): {metrics['ari']:.4f}")
+        print(f"NMI (Normalized Mutual Information): {metrics['nmi']:.4f}")
+        print(f"Number of clusters: {metrics['n_clusters']}")
+        print(f"Number of cell types: {metrics['n_cell_types']}")
         
-        # Finalize wandb run
         wandb.finish()
         
     except Exception as e:
