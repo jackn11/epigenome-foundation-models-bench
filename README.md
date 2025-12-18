@@ -32,6 +32,46 @@ The practical implementation part of the final project for CS-433 Machine learni
     - minor compatibility improvments
     - minor performance improvments
 
+## Datasets and Required Files
+
+### Datasets
+
+The following datasets need to be downloaded from the [Human-scATAC-Corpus](https://health.tsinghua.edu.cn/human-scatac-corpus/download.php):
+- `Kanemaru2023`
+- `Li2023b`
+- `Buenrostro2018`
+- `Pierce2021`
+- `Liscovitch-Brauer2021`
+
+The path to each dataset's `*.h5ad` file should be passed to the experiment scripts using `--dataset_path` or `--input_path` (depending on the script).
+
+### EpiAgent Files
+
+EpiAgent experiments require the following files:
+
+1. **Pretrained model weights**: Download from [Google Drive](https://drive.google.com/drive/folders/1WlNykSCNtZGsUp2oG0dw3cDdVKYDR-iX?usp=sharing)
+   - Pass the model file path using `--model_path` (or `--pretrained_model_path` for perturbation experiments)
+
+2. **cCRE reference files**: Included in the `EpiAgent` repository
+   - `cCRE_document_frequency.npy`: Pass using `--cCRE_document_frequency_path`
+   - `cCRE.bed`: Used automatically during preprocessing
+
+### ChromFound Files
+
+ChromFound experiments require pretrained weights downloaded from [Google Drive](https://drive.google.com/drive/folders/1wSq9gPwnUmSiw3obz1mjyX2ZiXS8sWbf):
+
+Place the following files in a checkpoint directory:
+- `model.pt`: Model weights file
+- `chromfd_pretrain.yaml`: Pretraining configuration file
+- `chromosome_vocab.yaml`: Chromosome index mapping file
+
+Pass the checkpoint directory path using:
+- `--pretrain_checkpoint_path`: Path to the directory containing the files above
+- `--pretrain_model_name`: Name of the model file
+- `--pretrain_config_file`: Name of the config file
+
+Note: `chromosome_vocab.yaml` should be in the same directory as `--pretrain_checkpoint_path` and will be loaded automatically.
+
 ## Installation
 
 Both EpiAgent and ChromFound require a unique set of dependencies. We advise you to create two separate `conda` environments as shown in the steps below.
