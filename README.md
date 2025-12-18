@@ -3,7 +3,7 @@
 
 # Investigating the Zero-Shot Capabilities of Single-Cell Epigenomic Foundation Models
 
-The practical implementation part of the final project for CS-433 Machine learning course at EPFL. This project focuses at benchmarking two state-of-the-art epigenomic foundation models EpiAgent and ChromFound.
+The practical implementation part of the final project for CS-433 Machine learning course at EPFL. This project focuses on benchmarking two state-of-the-art epigenomic foundation models EpiAgent and ChromFound.
 
 <div align="center">
   <img src="benchmarks/radar_plot_comparison.png" alt="Model Comparison Radar Plot" width="600">
@@ -30,11 +30,11 @@ The practical implementation part of the final project for CS-433 Machine learni
 
 - `/EpiAgent` - clone of the [EpiAgent repository](https://github.com/xy-chen16/EpiAgent) with the following changes:
     - minor compatibility changes
-    - minor performance improvments
+    - minor performance improvements
     - added two additional preprocessing types in `/EpiAgent/epiagent/preprocessing.py` for the experiments
 - `/ChromFound` - clone of the [ChromFound repository](https://github.com/JohnsonKlose/ChromFound/tree/main) with the following changes:
-    - minor compatibility improvments
-    - minor performance improvments
+    - minor compatibility improvements
+    - minor performance improvements
 
 ## Datasets and Required Files
 
@@ -92,7 +92,7 @@ conda create -n EpiAgentBench python=3.11
 conda activate EpiAgentBench
 
 # Install cuda-toolkit using conda (building it gives the incompatible version at least at our machine)
-# Note: installing form conda-forge downloads a CPU version
+# Note: installing from conda-forge downloads a CPU version
 conda install -c nvidia cuda-toolkit=11.7
 
 # Install required additional libraries
@@ -115,12 +115,12 @@ conda env create -f environment.yml
 conda activate ChromFoundBench
 
 # Install cuda-toolkit using conda (building it gives the incompatible version at least at our machine)
-# Note: installing form conda-forge downloads a CPU version
+# Note: installing from conda-forge downloads a CPU version
 conda install -c nvidia cuda-toolkit=12.1.1
 
 pip install torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cu121
 
-# Note: add --no-build-isolation otherwase the packages fail because of version mismatches at buildtime
+# Note: add --no-build-isolation otherwise the packages fail because of version mismatches at buildtime
 pip install mamba-ssm==2.2.4 --no-build-isolation
 pip install flash-attn==2.5.8 --no-build-isolation
 
