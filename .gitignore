@@ -13,6 +13,8 @@ EpiAgent/external_data/*
 benchmarks/epiagent_bench/*/
 benchmarks/chromfound_bench/*/
 
+ChromFound-Parallel/
+
 ChromFound/sample_data/PBMC169K/cell_embedding/embeddings.h5ad
 ChromFound/sample_data/PBMC169K/cell_embedding/log_split_0.txt
 ChromFound/sample_data/PBMC169K/cell_embedding/log_split_1.txt
