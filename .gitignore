@@ -54,3 +54,5 @@ benchmarks/data2
 benchmarks/results-chrom
 
 EpiAgent/epiagent.egg-info/*
+ChromFound/data/
+ChromFound/sample_data
