@@ -29,7 +29,7 @@ import pandas as pd
 import sys
 from pathlib import Path
 
-# Add project root to path to allow importing benchmarks module
+
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -45,6 +45,7 @@ if torch.cuda.is_available():
 def get_args_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_name', type=str, default='Li2023b')
+    parser.add_argument('--dataset_path', type=str, required=True, help='Path to the dataset h5ad file')
     parser.add_argument('--batch_key', type=str, default='Batch (HSC)')
     parser.add_argument('--root', type=str, default='/scratch/naimer/github/project-2-team-1/EpiAgent/data')
     parser.add_argument('--seed', type=int, default=42)
@@ -86,12 +87,10 @@ def ilisi_graph_custom(
     else:
         G = G.tocsr()
 
-    # Encode batch labels as integers 0..B-1
     batch_codes, batch_uniques = pd.factorize(adata.obs[batch_key].astype("category"), sort=True)
     batch_codes = batch_codes.astype(np.int32)
     n = adata.n_obs
 
-    # Choose which cells to score (optional subsample)
     rng = np.random.default_rng(random_state)
     if subsample is not None and subsample < n:
         idx = rng.choice(n, size=subsample, replace=False)
@@ -119,9 +118,7 @@ def ilisi_graph_custom(
         if not np.isfinite(wsum) or wsum <= eps:
             return np.nan
 
-        # Weighted batch mass among neighbors
         bc = batch_codes[neigh]
-        # bincount with weights -> mass per batch
         mass = np.bincount(bc, weights=w, minlength=len(batch_uniques)).astype(np.float64, copy=False)
 
         p = mass / wsum
@@ -147,13 +144,7 @@ args = parser.parse_args()
 root = Path(args.root)
 
 print("Loading the dataset...")
-if args.dataset_name == 'Li2023b':
-    input_path = root / 'Li2023b' / 'Li2023b-brain_tissue' / 'Li2023b-brain_tissue-cell_by_cCRE.h5ad'
-elif args.dataset_name == 'Kanemaru2023':
-    input_path = root / 'Kanemaru2023' / 'Kanemaru2023-cardiac_tissue' / 'Kanemaru2023-cardiac_tissue-cell_by_cCRE.h5ad'
-else:
-    raise ValueError(f"Dataset {args.dataset_name} not supported")
-
+input_path = Path(args.dataset_path)
 adata = sc.read_h5ad(input_path)
 
 num_cell_types = len(adata.obs['cell_type'].unique())
@@ -199,7 +190,6 @@ if os.path.exists(embedding_save_path):
 else:
     print("No saved embeddings found. Computing from scratch...")
     print("Loading the pretrained model...")
-    # model_path = '../model/pretrained_EpiAgent.pth'
     model_path = Path(args.model_path)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -214,7 +204,6 @@ else:
 
 adata_tfidf.obsm['cell_embeddings_zero_shot'] = cell_embeddings
 
-# UMAP visualization
 print("visualizing UMAP...")
 sc.pp.neighbors(adata_tfidf, use_rep='cell_embeddings_zero_shot')
 sc.tl.umap(adata_tfidf)
@@ -231,7 +220,6 @@ plt.savefig(output_dir / 'umap_cell_types_true_labels.png', dpi=300, bbox_inches
 plt.close(fig)
 print("UMAP visualization (cell type) saved")
 
-# Plot UMAP with batch labels if batch key exists
 if args.batch_key is not None and args.batch_key in adata_tfidf.obs.columns:
     fig = sc.pl.umap(adata_tfidf, color=args.batch_key, return_fig=True, show=True, title='Cell embeddings (batch labels)')
     if fig is not None:
@@ -249,8 +237,6 @@ if args.batch_key is not None and args.batch_key in adata_tfidf.obs.columns:
 n_true_cell_types = len(adata_tfidf.obs['cell_type'].unique())
 print(f"Number of cell types: {n_true_cell_types}")
 
-# Perform leiden clustering with binary search to get exactly num_cell_types clusters
-# Note: neighbors are already computed using the embeddings
 optimal_resolution, n_clusters = find_leiden_resolution_for_n_clusters(
     adata_tfidf, 
     target_n_clusters=num_cell_types, 
@@ -280,7 +266,6 @@ print("calculating silhouette scores...")
 silhouette_score = silhouette(adata_tfidf, label_key='cell_type', embed='cell_embeddings_zero_shot')
 silhouette_batch_score = silhouette_batch(adata_tfidf, label_key='cell_type', batch_key=args.batch_key, embed='cell_embeddings_zero_shot')
 
-# Calculate mean silhouette per group
 cell_embeddings = adata_tfidf.obsm['cell_embeddings_zero_shot']
 cell_types = adata_tfidf.obs['cell_type'].values
 silhouette_samples_scores = silhouette_samples(cell_embeddings, cell_types)
@@ -354,21 +339,18 @@ sc.pp.neighbors(adata_tfidf, use_rep='cell_embeddings_zero_shot')
 print(f"Neighbors computed for {adata_tfidf.n_obs} cells")
 
 print("Calculating batch integration metrics...")
-# iLISI (Integration Local Inverse Simpson's Index). Higher is better (more batch mixing)
 print("  Calculating iLISI...")
 ilisi_score = ilisi_graph_custom(
     adata_tfidf,
     batch_key=args.batch_key,
-    subsample=None,          # set small e.g. 50000 for speed on huge datasets
     random_state=args.seed,
     exclude_self=True,
 )
 print(f"ilisi score: {ilisi_score:.4f} (higher is better)")
 
 print("  Calculating PCR batch...")
-# Lower is better (less batch effect), so we'll store 1-pcr for "higher is better" interpretation
 pcr_batch_score_raw = pcr(adata_tfidf, covariate=args.batch_key, embed='cell_embeddings_zero_shot', recompute_pca=True)
-pcr_batch_score = 1 - pcr_batch_score_raw  # Invert so higher is better
+pcr_batch_score = 1 - pcr_batch_score_raw
 
 print(f"  PCR batch score (1-PCR): {pcr_batch_score:.4f} (higher is better, original PCR: {pcr_batch_score_raw:.4f})")
 

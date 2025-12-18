@@ -15,6 +15,11 @@ from epiagent.inference import infer_cell_embeddings
 from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 import matplotlib.pyplot as plt
 from scib.metrics import silhouette, silhouette_batch
+from pathlib import Path
+import sys
+
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 from benchmarks.benchmark_utils import prepare_img, find_leiden_resolution_for_n_clusters
 

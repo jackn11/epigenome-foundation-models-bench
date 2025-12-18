@@ -17,8 +17,8 @@ from epiagent.model import EpiAgent
 from epiagent.dataset import CellDataset, collate_fn
 
 
-CONTROL_LABEL = "control"        # we already remapped sgsgNT -> control
-UNK_LABEL = "UNK"                # will be dropped
+CONTROL_LABEL = "control"
+UNK_LABEL = "UNK"
 
 MAX_SEQ_LEN = 8192
 VOCAB_SIZE = 1355449
@@ -26,8 +26,8 @@ NUM_LAYERS = 18
 EMBED_DIM = 512
 NUM_HEADS = 8
 
-K_NEIGHBORS = 20                # k for local neighborhood
-MIN_GENE_CELLS = 30             # skip genes with fewer cells
+K_NEIGHBORS = 20
+MIN_GENE_CELLS = 30
 
 SEED = 42
 random.seed(SEED)
@@ -53,7 +53,6 @@ def load_metadata_and_cell_indices(csv_path):
     print(f"[INFO] Loading CSV from {csv_path}")
     df = pd.read_csv(csv_path, usecols=["cell_indices", "perturbation"])
 
-    # map sgsgNT -> control, drop UNK and NaNs
     df.loc[df["perturbation"] == "sgsgNT", "perturbation"] = CONTROL_LABEL
     df = df[df["perturbation"] != UNK_LABEL].reset_index(drop=True)
     df = df.dropna(subset=["perturbation"]).reset_index(drop=True)
@@ -103,7 +102,7 @@ def build_epigagent_and_embed(args, cell_indices_list, device="cuda"):
             input_ids = batch.to(device)
             with torch.cuda.amp.autocast(dtype=torch.float16):
                 outputs = model(input_ids)
-                emb = outputs["transformer_outputs"][:, 0, :]  # (B, 512)
+                emb = outputs["transformer_outputs"][:, 0, :]   
             all_embeddings.append(emb.float().cpu().numpy())
 
     embeddings = np.concatenate(all_embeddings, axis=0)
@@ -118,7 +117,6 @@ def get_or_compute_embeddings(args, cell_indices_list, perturbations, device="cu
     We cache embeddings BEFORE HDBSCAN filtering. HDBSCAN is cheap
     compared to the forward pass, so we rerun it each time.
     """
-    # If cache exists, load and sanity-check shapes
     embedding_cache_path = os.path.join(args.cache_dir, "cell_embeddings.npy")
     perturbation_cache_path = os.path.join(args.cache_dir, "perturbations.npy")
     if os.path.exists(embedding_cache_path) and os.path.exists(perturbation_cache_path):
@@ -136,11 +134,9 @@ def get_or_compute_embeddings(args, cell_indices_list, perturbations, device="cu
             print("[INFO] Loaded cached embeddings successfully.")
             return cached_embeddings, cached_perts
 
-    # Otherwise compute from scratch
     print("[INFO] No valid cache found; computing embeddings with EpiAgent...")
     embeddings = build_epigagent_and_embed(args, cell_indices_list, device=device)
 
-    # Save cache
     np.save(embedding_cache_path, embeddings)
     np.save(perturbation_cache_path, np.asarray(perturbations, dtype=str))
     print(f"[INFO] Saved embeddings cache to {embedding_cache_path}")
@@ -165,13 +161,11 @@ def hdbscan_filter_main_cluster(embeddings, perturbations):
     for lab, cnt in zip(unique, counts):
         print(f"    {lab}: {cnt}")
 
-    # ignore noise label -1 when picking largest cluster
     valid = unique[unique != -1]
     if len(valid) == 0:
         print("[WARN] HDBSCAN found no clusters; returning original data.")
         return embeddings, perturbations
 
-    # pick label with max count among non-noise
     label_counts = {lab: cnt for lab, cnt in zip(unique, counts) if lab != -1}
     main_label = max(label_counts, key=label_counts.get)
     keep_mask = labels == main_label
@@ -202,19 +196,15 @@ def compute_local_knn_dists(embeddings, perturbations, gene, k_neighbors=20):
     emb_ctrl = embeddings[ctrl_idx]
     emb_gene = embeddings[gene_idx]
 
-    # fit kNN on control cells
-    k = min(k_neighbors + 1, emb_ctrl.shape[0])  # +1 to account for self in baseline
+    k = min(k_neighbors + 1, emb_ctrl.shape[0])
     nn = NearestNeighbors(n_neighbors=k, metric="euclidean")
     nn.fit(emb_ctrl)
 
-    # baseline: control -> control
     d_ctrl, idx_ctrl = nn.kneighbors(emb_ctrl, return_distance=True)
-    # drop self (distance 0)
-    baseline_dists = d_ctrl[:, 1:].mean(axis=1)  # shape (n_ctrl,)
+    baseline_dists = d_ctrl[:, 1:].mean(axis=1)
 
-    # gene -> control
     d_gene, idx_gene = nn.kneighbors(emb_gene, return_distance=True)
-    gene_dists = d_gene.mean(axis=1)             # shape (n_gene,)
+    gene_dists = d_gene.mean(axis=1)
 
     return baseline_dists, gene_dists, len(ctrl_idx), len(gene_idx)
 
@@ -229,7 +219,6 @@ def summarize_and_plot_local_deviation(
     mean_gene = float(gene_dists.mean())
     std_gene = float(gene_dists.std(ddof=1))
 
-    # pooled std for Cohen's d
     pooled_var = (
         ((n_ctrl - 1) * std_ctrl**2 + (n_gene - 1) * std_gene**2)
         / (n_ctrl + n_gene - 2)
@@ -247,7 +236,6 @@ def summarize_and_plot_local_deviation(
         f"Cohen's d={cohens_d:.3f}"
     )
 
-    # ---- visualization ----
     fig, ax = plt.subplots(figsize=(8, 4))
 
     ax.hist(
@@ -300,17 +288,11 @@ def summarize_and_plot_local_deviation(
 
 
 def main(args):
-    # 1) Load metadata
     cell_indices_list, perturbations = load_metadata_and_cell_indices(args.csv_path)
 
-    # 2) Get or compute EpiAgent embeddings (with caching)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     embeddings, perturbations = get_or_compute_embeddings(args, cell_indices_list, perturbations, device=device)
 
-    # 3) HDBSCAN filter to main cluster
-    # embeddings, perturbations = hdbscan_filter_main_cluster(embeddings, perturbations)
-
-    # 4) Compute metrics per gene
     all_metrics = []
 
     unique_perts = np.unique(perturbations)
@@ -347,24 +329,21 @@ def main(args):
             f.write(f"Weighted mean Cohen's d = {weighted_mean_d:.6f}\n")
 
         if "Pierce2021" in args.csv_path:
-            # BIO_RANK = ['sgGATA1', 'sgCAD', 'sgRPL9', 'sgCDC5L', 'sgKLF1', 'sgNFE2', 'sgNRF1', 'sgARID2', 'sgGABPA', 'sgARID3A', 'sgZNF407', 'sgFOSL1', 'sgMAX', 'sgATF3', 'sgHSPA5', 'sgCTCF', 'sgGTF2B', 'sgMYC', 'sgHINFP', 'sgKLF16', 'sgNFYB', 'sgCUX1', 'sgTHAP1', 'sgZBTB11', 'sgPBX2', 'sgATF1', 'sgYY1', 'sgPOLR1D', 'sgBCLAF1', 'sgREST', 'sgZZZ3', 'sgCEBPB', 'sgTFDP1', 'sgTBP', 'sgBRF2', 'sgCEBPZ', 'sgSETDB1', 'sgZNF280A', 'sgTRIM28', 'sgELF1']
             chromVAR_rank = (Path(__file__).parent / "Pierce2021_chromVAR_gene_ranking.txt").read_text().strip().split(',') 
 
-            # Create mapping from gene name to rank (1-indexed: first gene = rank 1)
             chromvar_rank_dict = {gene: rank + 1 for rank, gene in enumerate(chromVAR_rank)}
             
             ranks = []
             d_values_rank = []
 
             for _, row in df_metrics.iterrows():
-                gene = row["gene"]  # keep "sg" prefix for chromVAR_rank matching
+                gene = row["gene"]
                 d_val = row["cohens_d"]
 
                 if gene in chromvar_rank_dict:
                     ranks.append(chromvar_rank_dict[gene])
                     d_values_rank.append(d_val)
                 else:
-                    # Skip genes not in chromVAR_rank for this metric
                     continue
 
             if len(ranks) > 0:
@@ -376,11 +355,9 @@ def main(args):
                 print("[WARN] No genes found in chromVAR_rank for rank-based metric calculation.")
 
 
-        # 6) Plot bar plot of Cohen's d for all genes
         print("[INFO] Creating bar plot of Cohen's d for all genes...")
         fig, ax = plt.subplots(figsize=(14, 6))
         
-        # Sort by Cohen's d for better visualization
         df_sorted = df_metrics.sort_values('cohens_d', ascending=False)
         
         genes = df_sorted['gene'].values
@@ -388,7 +365,6 @@ def main(args):
         
         bars = ax.bar(range(len(genes)), cohens_d_values, alpha=0.7)
         
-        # Color bars based on positive/negative values
         for i, (bar, val) in enumerate(zip(bars, cohens_d_values)):
             if val >= 0:
                 bar.set_color('salmon')
