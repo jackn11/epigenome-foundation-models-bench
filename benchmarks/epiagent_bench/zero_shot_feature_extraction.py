@@ -47,7 +47,7 @@ def get_args_parser():
     parser.add_argument('--dataset_name', type=str, default='Li2023b')
     parser.add_argument('--dataset_path', type=str, required=True, help='Path to the dataset h5ad file')
     parser.add_argument('--batch_key', type=str, default='Batch (HSC)')
-    parser.add_argument('--root', type=str, default='/scratch/naimer/github/project-2-team-1/EpiAgent/data')
+    parser.add_argument('--cCRE_document_frequency_path', type=str, required=True, help='Path to cCRE document frequency numpy file')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--model_path', type=str, default='/scratch/wkim/project-2-team-1/EpiAgent/model/pretrained_EpiAgent.pth')
     parser.add_argument('--token_cache_dir', type=str, default='./cache')
@@ -141,8 +141,6 @@ def ilisi_graph_custom(
 parser = get_args_parser()
 args = parser.parse_args()
 
-root = Path(args.root)
-
 print("Loading the dataset...")
 input_path = Path(args.dataset_path)
 adata = sc.read_h5ad(input_path)
@@ -150,7 +148,7 @@ adata = sc.read_h5ad(input_path)
 num_cell_types = len(adata.obs['cell_type'].unique())
 print(f"Number of cell types in the dataset: {num_cell_types}")
 
-cCRE_document_frequency = np.load(root / 'cCRE_document_frequency.npy')
+cCRE_document_frequency = np.load(args.cCRE_document_frequency_path)
 
 
 cache_dir = Path(args.token_cache_dir)
