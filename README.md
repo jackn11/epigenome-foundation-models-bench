@@ -8,7 +8,7 @@ The practical implementation part of the final project for CS-433 Machine learni
 <div align="center">
   <img src="benchmarks/radar_plot_comparison.png" alt="Model Comparison Radar Plot" width="600">
 </div>
-
+*The results of this project should be interpreted as research guidelines and must not be used as standalone evidence for clinical decision-making.*
 ## Repository structure:
 
 - `/benchmarks` - all of our benchmarking code
